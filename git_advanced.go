@@ -21,6 +21,7 @@ func gitServiceFor(ctx context.Context, root string) *gitService {
 }
 
 type gitAdvancedState struct {
+	collapsed                       map[string]bool
 	textSelect                      bool
 	patchEditor                     *editor.State
 	graphCache                      map[string]*ui.SVG
@@ -91,70 +92,127 @@ func (a *app) gitReference(ref string) {
 		return gitPanelEvent{history: h, historyLoaded: true, err: e}
 	})
 }
+
+// Keep repository navigation compact and consistent with the file explorer.
+func (a *app) gitReferenceGroup(c *ui.Context, title string, count int, build func()) {
+	if count == 0 {
+		return
+	}
+	p := &a.git.advanced
+	if p.collapsed == nil {
+		p.collapsed = map[string]bool{}
+	}
+	ui.Column(c.Key("group-" + title)).FillWidth().Gap(2).Children(func() {
+		ui.Button(c.Key("toggle-"+title), "").Label(title).FillWidth().Height(28).Padding(4, 6).Border(0, ui.Transparent).Background(ui.Transparent).Radius(6).OnClick(func() { p.collapsed[title] = !p.collapsed[title] }).Children(func() {
+			ui.Row(c).Fill().Gap(6).AlignItems(ui.Center).Children(func() {
+				arrow := "chevron-down"
+				if p.collapsed[title] {
+					arrow = "chevron-right"
+				}
+				icon(c, arrow, 12)
+				muted(c, title).FontSize(11).Grow(1)
+				muted(c, fmt.Sprint(count)).FontSize(10)
+			})
+		})
+		if !p.collapsed[title] {
+			build()
+		}
+	})
+}
+func (a *app) gitReferenceRow(c *ui.Context, key, title, symbol string, current bool, click func()) ui.Element {
+	return ui.Button(c.Key(key), "").Label(title).FillWidth().Height(32).Padding(5, 8, 5, 24).Radius(6).Border(0, ui.Transparent).Background(ui.Transparent).Disabled(a.git.busy).OnClick(click).Children(func() {
+		ui.Row(c).Fill().Gap(8).AlignItems(ui.Center).Children(func() {
+			icon(c, symbol, 14)
+			ui.Text(c, title).FontSize(12).MaxLines(1).MinWidth(0).Grow(1)
+			if current {
+				icon(c, "check", 12)
+			}
+		})
+	})
+}
 func (a *app) gitRepositoryNavigation(c *ui.Context) {
 	p := &a.git
 	s := p.state.Advanced
 	ui.Scroll(c.Key("git-references")).Grow(1).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().Gap(8).Children(func() {
+		ui.Column(c).FillWidth().Gap(12).Children(func() {
 			for _, group := range []struct {
 				title  string
 				remote bool
-			}{{"本地分支", false}, {"远端分支", true}} {
-				muted(c, group.title).FontSize(11)
-				for _, branch := range s.Branches {
-					b := branch
-					if b.Remote != group.remote {
-						continue
+			}{{"分支", false}} {
+				count := 0
+				for _, b := range s.Branches {
+					if b.Remote == group.remote {
+						count++
 					}
-					ref := "refs/heads/" + b.Name
-					if b.Remote {
-						ref = "refs/remotes/" + b.Name
-					}
-					ui.Button(c.Key(ref), b.Name).FillWidth().Justify(ui.Start).Background(ui.Transparent).Border(0, ui.Transparent).Disabled(p.busy).OnClick(func() { a.gitReference(ref) }).ContextMenu(func(m *ui.Menu) { a.gitBranchMenu(m, b) })
 				}
-			}
-			muted(c, "标签").FontSize(11)
-			for _, tag := range s.Tags {
-				t := tag
-				action(c, "git-tag-"+t.Name, t.Name, func() { a.gitReference("refs/tags/" + t.Name) }).FillWidth().Disabled(p.busy)
-			}
-			muted(c, "远端").FontSize(11)
-			for _, remote := range s.Remotes {
-				r := remote
-				ui.Button(c.Key("remote-"+r.Name), r.Name).FillWidth().Justify(ui.Start).Background(ui.Transparent).Border(0, ui.Transparent).Tooltip(r.URL).Disabled(p.busy).OnClick(func() { a.gitAsk("remote-info", "远端 · "+r.Name, r.Name, r.URL, "") }).ContextMenu(func(m *ui.Menu) {
-					if m.Item("在浏览器打开").Chosen() {
-						a.gitServiceTask(false, "remote-browser", func(g *gitService, root string) gitPanelEvent {
-							raw, e := g.runGit(root, "remote", "get-url", "--", r.Name)
-							if e != nil {
-								return gitPanelEvent{err: e}
-							}
-							address, e := g.gitWebURL(raw)
-							return gitPanelEvent{external: address, err: e}
-						})
-					}
-				})
-			}
-			muted(c, "贮藏").FontSize(11)
-			for _, stash := range s.Stashes {
-				v := stash
-				ui.Button(c.Key(v.Hash), v.Subject).FillWidth().MinWidth(0).MaxLines(2).Background(ui.Transparent).Border(0, ui.Transparent).Disabled(p.busy).OnClick(func() {
-					p.filePath = ""
-					a.gitServiceTask(false, "stash-preview", func(g *gitService, root string) gitPanelEvent {
-						patch, e := g.GitStashDiff(root, v.Hash)
-						return gitPanelEvent{preview: true, title: v.Subject, patch: patch, err: e}
-					})
-				}).ContextMenu(func(m *ui.Menu) {
-					for _, op := range []struct{ kind, label string }{{"apply", "恢复（保留贮藏）…"}, {"pop", "恢复并删除…"}, {"drop", "删除贮藏…"}} {
-						if m.Item(op.label).Chosen() {
-							a.gitAsk("stash-action", op.label, v.Hash, "", v.Subject)
-							a.git.dialog.mode = op.kind
+				a.gitReferenceGroup(c, group.title, count, func() {
+					for _, branch := range s.Branches {
+						b := branch
+						if b.Remote != group.remote {
+							continue
 						}
-					}
-					if m.Item("复制提交哈希").Chosen() {
-						golet.Clipboard.WriteText(v.Hash)
+						ref := "refs/heads/" + b.Name
+						if b.Remote {
+							ref = "refs/remotes/" + b.Name
+						}
+						a.gitReferenceRow(c, ref, b.Name, "git", !b.Remote && b.Name == s.Branch, func() { a.gitReference(ref) }).ContextMenu(func(m *ui.Menu) { a.gitBranchMenu(m, b) })
 					}
 				})
 			}
+			a.gitReferenceGroup(c, "标签", len(s.Tags), func() {
+				for _, tag := range s.Tags {
+					t := tag
+					a.gitReferenceRow(c, "git-tag-"+t.Name, t.Name, "tag", false, func() { a.gitReference("refs/tags/" + t.Name) })
+				}
+			})
+			a.gitReferenceGroup(c, "远端", len(s.Remotes), func() {
+				for _, remote := range s.Remotes {
+					r := remote
+					a.gitReferenceRow(c, "remote-"+r.Name, r.Name, "remote", false, func() { a.gitAsk("remote-info", "远端 · "+r.Name, r.Name, r.URL, "") }).Tooltip(r.URL).ContextMenu(func(m *ui.Menu) {
+						if m.Item("在浏览器打开").Chosen() {
+							a.gitServiceTask(false, "remote-browser", func(g *gitService, root string) gitPanelEvent {
+								raw, e := g.runGit(root, "remote", "get-url", "--", r.Name)
+								if e != nil {
+									return gitPanelEvent{err: e}
+								}
+								address, e := g.gitWebURL(raw)
+								return gitPanelEvent{external: address, err: e}
+							})
+						}
+					})
+					for _, branch := range s.Branches {
+						b := branch
+						if !b.Remote || !strings.HasPrefix(b.Name, r.Name+"/") {
+							continue
+						}
+						ref := "refs/remotes/" + b.Name
+						a.gitReferenceRow(c, ref, strings.TrimPrefix(b.Name, r.Name+"/"), "git", false, func() { a.gitReference(ref) }).Padding(5, 8, 5, 42).ContextMenu(func(m *ui.Menu) { a.gitBranchMenu(m, b) })
+					}
+
+				}
+			})
+			a.gitReferenceGroup(c, "贮藏", len(s.Stashes), func() {
+				for _, stash := range s.Stashes {
+					v := stash
+					a.gitReferenceRow(c, v.Hash, v.Subject, "archive", false, func() {
+						p.filePath = ""
+						a.gitServiceTask(false, "stash-preview", func(g *gitService, root string) gitPanelEvent {
+							patch, e := g.GitStashDiff(root, v.Hash)
+							return gitPanelEvent{preview: true, title: v.Subject, patch: patch, err: e}
+						})
+					}).ContextMenu(func(m *ui.Menu) {
+						for _, op := range []struct{ kind, label string }{{"apply", "恢复（保留贮藏）…"}, {"pop", "恢复并删除…"}, {"drop", "删除贮藏…"}} {
+							if m.Item(op.label).Chosen() {
+								a.gitAsk("stash-action", op.label, v.Hash, "", v.Subject)
+								a.git.dialog.mode = op.kind
+							}
+						}
+						if m.Item("复制提交哈希").Chosen() {
+							golet.Clipboard.WriteText(v.Hash)
+						}
+					})
+				}
+			})
 		})
 	})
 }

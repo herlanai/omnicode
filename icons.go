@@ -6,6 +6,8 @@ var icons = map[string]*ui.SVG{}
 
 func init() {
 	paths := map[string]string{
+		"tag":           `<path d="M3 3h8l10 10-8 8L3 11z"/><circle cx="7.5" cy="7.5" r="1"/>`,
+		"remote":        `<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18z"/>`,
 		"trash":         `<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>`,
 		"git":           `<circle cx="6" cy="5" r="3"/><circle cx="6" cy="19" r="3"/><circle cx="18" cy="6" r="3"/><path d="M6 8v8m12-7a10 10 0 0 1-9 10"/>`,
 		"minus":         `<path d="M5 12h14"/>`,

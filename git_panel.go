@@ -326,75 +326,94 @@ func (a *app) gitSidebar(c *ui.Context) {
 				}
 				return
 			}
-			ui.Button(c.Key("git-branch"), p.state.Branch).FillWidth().Background(ui.Transparent).Border(0, ui.Transparent).Menu(func(m *ui.Menu) {
-				for _, branch := range p.state.Branches {
-					b := branch
-					if m.Item(b).Chosen() {
-						a.gitAsk("switch", "切换分支", b, "", "切换前需要提交或贮藏工作区修改。")
-					}
-				}
-				if m.Item("新建分支…").Chosen() {
-					a.gitAsk("branch", "新建分支", "", "", "从当前 HEAD 创建并切换。")
-				}
-			}).Disabled(p.busy)
-			ui.Row(c).Gap(6).Children(func() {
-				for _, tab := range []string{"变更", "历史", "仓库"} {
-					label := tab
+
+			muted(c, "工作区").FontSize(11).Padding(8, 6, 2, 6)
+			ui.Column(c).FillWidth().Gap(2).Children(func() {
+				for _, item := range []struct{ tab, label, symbol string }{{"变更", "文件状态", "files"}, {"历史", "提交历史", "history"}, {"搜索", "搜索提交", "search"}, {"暂存", "暂存区", "archive"}} {
+					entry := item
 					bg := ui.Transparent
-					if p.tab == label || p.tab == "" && label == "变更" {
+					if p.tab == entry.tab || p.tab == "" && entry.tab == "变更" {
 						bg = a.theme.Background
 					}
-					action(c, "git-tab-"+label, label, func() {
-						p.tab = label
-						if label == "历史" {
-							p.selection = ""
-							p.filePath = ""
-							p.patch = nil
-							p.diff = nil
-							p.advanced.historyLoaded = false
-							p.advanced.ref = ""
-						}
+					a.gitReferenceRow(c, "nav-"+entry.tab, entry.label, entry.symbol, false, func() {
+						p.tab = entry.tab
+						p.selection = ""
+						p.filePath = ""
+						p.diff = nil
+						p.patch = nil
+						p.advanced.historyLoaded = false
+						p.advanced.ref = ""
 					}).Background(bg)
 				}
 			})
-			if p.tab == "仓库" {
-				a.gitRepositoryNavigation(c)
-				return
-			}
-			if p.tab == "历史" {
-				forma.Input(c, &p.advanced.query, forma.InputOptions{Placeholder: "搜索提交、作者、哈希…"}).FillWidth()
-				muted(c, p.advanced.ref).FontSize(11).Wrap()
-				action(c, "git-all-history", "全部分支", func() {
-					p.advanced.historyLoaded = false
-					p.advanced.ref = ""
-					p.selection = ""
-					p.patch = nil
-					p.diff = nil
-				}).FillWidth()
-				ui.Box(c).Grow(1)
-				return
-			}
-			forma.Input(c, &p.advanced.fileQuery, forma.InputOptions{Placeholder: "搜索修改文件…"}).FillWidth()
+			a.gitRepositoryNavigation(c)
 
-			ui.Scroll(c.Key("git-files")).Grow(1).FillWidth().Children(func() {
-				ui.Column(c).FillWidth().Gap(12).Children(func() { a.gitFileGroup(c, true); a.gitFileGroup(c, false) })
-			})
-			ui.Column(c).FillWidth().Background(a.theme.Background).Radius(9).Padding(10).Children(func() {
-				forma.Checkbox(c, &p.advanced.pushAfter, "提交后推送")
-				ui.TextAreaBase(c.Key("git-commit-message"), &p.message).FillWidth().Height(60).Placeholder("提交说明…").FontSize(12).Disabled(p.busy)
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-					count := 0
-					for _, f := range p.state.Files {
-						if f.Index != " " && f.Index != "?" {
-							count++
-						}
-					}
-					iconButton(c, "git-ai-message", "sparkles", "AI 生成提交说明", a.gitGenerateMessage).Size(26, 26).Padding(5).Disabled(p.busy || count == 0)
-					muted(c, fmt.Sprintf("%d 项已暂存", count)).Grow(1).FontSize(11)
-					iconButton(c, "git-commit", "check", "提交已暂存的修改", func() { a.gitCommit(false, p.message) }).Disabled(p.busy || count == 0 || strings.TrimSpace(p.message) == "")
-				})
+		})
+	})
+}
+func (a *app) gitChangesPanel(c *ui.Context) {
+	p := &a.git
+	ui.Column(c).Width(270).FillHeight().Padding(14).Gap(12).Background(a.theme.Background).Children(func() {
+		forma.Input(c, &p.advanced.fileQuery, forma.InputOptions{Placeholder: "搜索修改文件…"}).FillWidth()
+
+		ui.Scroll(c.Key("git-files")).Grow(1).FillWidth().Children(func() {
+			ui.Column(c).FillWidth().Gap(12).Children(func() {
+				a.gitFileGroup(c, true)
+				if p.tab != "暂存" {
+					a.gitFileGroup(c, false)
+				}
 			})
 		})
+		count := 0
+		for _, f := range p.state.Files {
+			if f.Index != " " && f.Index != "?" {
+				count++
+			}
+		}
+		ui.Column(c).FillWidth().Background(a.theme.Sidebar).Radius(9).Padding(10).Gap(8).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				muted(c, "提交说明").FontSize(11).Grow(1)
+				iconButton(c, "git-ai-message", "sparkles", "AI 生成提交说明", a.gitGenerateMessage).Size(26, 26).Padding(5).Disabled(p.busy || count == 0)
+			})
+			ui.TextAreaBase(c.Key("git-commit-message"), &p.message).FillWidth().Height(90).Placeholder("简要描述本次修改…").FontSize(12).Disabled(p.busy)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				forma.Checkbox(c, &p.advanced.pushAfter, "提交后推送")
+				ui.Box(c).Grow(1)
+				iconButton(c, "git-commit", "check", fmt.Sprintf("提交 %d 项暂存修改", count), func() { a.gitCommit(false, p.message) }).Disabled(p.busy || count == 0 || strings.TrimSpace(p.message) == "")
+			})
+		})
+	})
+}
+func (a *app) gitBranchBar(c *ui.Context) {
+	p := &a.git
+	ui.Row(c).FillWidth().Padding(4, 14).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Button(c.Key("git-branch"), "").Label("当前分支："+p.state.Branch).Width(180).Height(32).Padding(6, 8).Background(ui.Transparent).Border(0, ui.Transparent).Children(func() {
+			ui.Row(c).Fill().Gap(8).AlignItems(ui.Center).Children(func() {
+				icon(c, "git", 14)
+				ui.Text(c, p.state.Branch).FontSize(12).MaxLines(1).Grow(1).MinWidth(0)
+				icon(c, "chevron-down", 12)
+			})
+		}).Menu(func(m *ui.Menu) {
+			for _, branch := range p.state.Branches {
+				b := branch
+				if m.Item(b).Chosen() {
+					a.gitAsk("switch", "切换分支", b, "", "切换前需要提交或贮藏工作区修改。")
+				}
+			}
+			if m.Item("新建分支…").Chosen() {
+				a.gitAsk("branch", "新建分支", "", "", "从当前 HEAD 创建并切换。")
+			}
+		}).Disabled(p.busy)
+		iconButton(c, "git-new-branch", "plus", "新建分支", func() { a.gitAsk("branch", "新建分支", "", "", "从当前 HEAD 创建并切换。") }).Disabled(p.busy || p.state.Root == "")
+		ui.Box(c).Grow(1)
+		label := "文件状态"
+		if p.tab == "暂存" {
+			label = "暂存区"
+		}
+		if p.tab == "历史" || p.tab == "搜索" {
+			label = "提交历史"
+		}
+		muted(c, label).FontSize(11)
 	})
 }
 func (a *app) gitFileGroup(c *ui.Context, staged bool) {
@@ -414,6 +433,14 @@ func (a *app) gitFileGroup(c *ui.Context, staged bool) {
 			muted(c, fmt.Sprintf("%s  %d", title, len(files))).FontSize(11).Grow(1)
 			iconButton(c, "all-"+operation, symbol, map[bool]string{true: "全部取消暂存", false: "全部暂存"}[staged], func() { a.gitRun(operation, "", "") }).Size(24, 24).Padding(5).Disabled(p.busy || len(files) == 0)
 		})
+		if len(files) == 0 {
+			text := "没有未暂存的修改"
+			if staged {
+				text = "选择文件旁的 + 暂存"
+			}
+			muted(c, text).FontSize(11).Wrap().Padding(10, 6)
+		}
+
 		for _, file := range files {
 			if p.advanced.fileQuery != "" && !strings.Contains(strings.ToLower(file.Path), strings.ToLower(p.advanced.fileQuery)) {
 				continue
@@ -426,7 +453,11 @@ func (a *app) gitFileGroup(c *ui.Context, staged bool) {
 			if f.Conflict {
 				status = "!"
 			}
-			ui.Row(c.Key(f.Path)).FillWidth().Gap(3).AlignItems(ui.Center).Children(func() {
+			selectedBG := ui.Transparent
+			if p.filePath == f.Path && p.staged == staged {
+				selectedBG = a.theme.Sidebar
+			}
+			ui.Row(c.Key(f.Path)).FillWidth().Radius(6).Background(selectedBG).Gap(3).AlignItems(ui.Center).Children(func() {
 				ui.Button(c.Key("select"), "").Grow(1).MinWidth(0).Padding(5).Background(ui.Transparent).Border(0, ui.Transparent).Disabled(p.busy).Tooltip(f.Path).OnClick(func() { a.gitSelect(f, staged) }).ContextMenu(func(m *ui.Menu) {
 					a.gitFileExtras(m, f)
 					if m.Item("打开文件").Chosen() {
@@ -543,44 +574,71 @@ func (a *app) gitContent(c *ui.Context) {
 				}
 			})
 		}
-		if p.selection != "" {
-			ui.Row(c).FillWidth().Padding(4, 16).AlignItems(ui.Center).Children(func() {
-				muted(c, p.selection).FontSize(11).Grow(1).MaxLines(1)
-				if p.filePath != "" && p.advanced.rawPatch != "" {
-					iconButton(c, "git-line-mode", "code", "切换逐行操作", func() { p.advanced.lineMode = !p.advanced.lineMode }).Size(26, 26).Padding(5)
+		if p.state.Root != "" {
+			a.gitBranchBar(c)
+		}
+		ui.Row(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+			if p.state.Root != "" && p.tab != "历史" && p.tab != "搜索" {
+				a.gitChangesPanel(c)
+				ui.Box(c).Width(1).FillHeight().Background(a.theme.Sidebar)
+			}
+			ui.Column(c).Grow(1).MinWidth(0).FillHeight().Children(func() {
+				if p.tab == "历史" || p.tab == "搜索" {
+					ui.Row(c).FillWidth().Padding(10, 16).Gap(10).AlignItems(ui.Center).Children(func() {
+						forma.Input(c, &p.advanced.query, forma.InputOptions{Placeholder: "搜索提交、作者、哈希…"}).Grow(1)
+						if p.advanced.ref != "" {
+							muted(c, p.advanced.ref).FontSize(11).MaxLines(1)
+						}
+						iconButton(c, "git-all-history", "git", "全部分支", func() {
+							p.advanced.historyLoaded = false
+							p.advanced.ref = ""
+							p.selection = ""
+							p.diff = nil
+							p.patch = nil
+						})
+					})
 				}
-				if p.tab == "历史" {
-					iconButton(c, "history-back", "history", "返回提交图表", func() { p.selection = ""; p.patch = nil; p.diff = nil }).Size(26, 26).Padding(5)
+
+				if p.selection != "" {
+					ui.Row(c).FillWidth().Padding(4, 16).AlignItems(ui.Center).Children(func() {
+						muted(c, p.selection).FontSize(11).Grow(1).MaxLines(1)
+						if p.filePath != "" && p.advanced.rawPatch != "" {
+							iconButton(c, "git-line-mode", "code", "切换逐行操作", func() { p.advanced.lineMode = !p.advanced.lineMode }).Size(26, 26).Padding(5)
+						}
+						if p.tab == "历史" || p.tab == "搜索" {
+							iconButton(c, "history-back", "history", "返回提交图表", func() { p.selection = ""; p.patch = nil; p.diff = nil }).Size(26, 26).Padding(5)
+						}
+						if p.filePath != "" {
+							iconButton(c, "git-open-file", "external", "在编辑器中打开", func() { a.open(filepath.Join(a.root, p.filePath)) }).Size(26, 26).Padding(5)
+						}
+					})
 				}
-				if p.filePath != "" {
-					iconButton(c, "git-open-file", "external", "在编辑器中打开", func() { a.open(filepath.Join(a.root, p.filePath)) }).Size(26, 26).Padding(5)
+				if (p.tab == "历史" || p.tab == "搜索") && p.selection == "" {
+					a.gitHistoryView(c)
+				} else if p.advanced.lineMode && p.filePath != "" && p.advanced.rawPatch != "" {
+					a.gitPatchView(c)
+				} else if p.diff != nil {
+					p.diff.Theme = a.codeTheme
+					p.diff.Font = ui.Font{Family: a.prefs.EditorFont, Size: float32(a.prefs.EditorSize)}
+					editor.DiffView(c.Key("git-diff"), p.diff).Fill()
+				} else if p.patch != nil {
+					p.patch.Theme = a.codeTheme
+					p.patch.Font = ui.Font{Family: a.prefs.EditorFont, Size: float32(a.prefs.EditorSize)}
+					editor.View(c.Key("git-patch"), p.patch).Fill()
+				} else {
+					ui.Column(c).Grow(1).FillWidth().AlignItems(ui.Center).Justify(ui.Center).Gap(12).Children(func() {
+						icon(c, "git", 32)
+						text := "选择一个文件，查看修改"
+						if p.state.Root == "" {
+							text = "仅管理当前打开的 Git 仓库"
+						} else if len(p.state.Files) == 0 {
+							text = "工作区干净"
+						}
+						muted(c, text)
+					})
 				}
 			})
-		}
-		if p.tab == "历史" && p.selection == "" {
-			a.gitHistoryView(c)
-		} else if p.advanced.lineMode && p.filePath != "" && p.advanced.rawPatch != "" {
-			a.gitPatchView(c)
-		} else if p.diff != nil {
-			p.diff.Theme = a.codeTheme
-			p.diff.Font = ui.Font{Family: a.prefs.EditorFont, Size: float32(a.prefs.EditorSize)}
-			editor.DiffView(c.Key("git-diff"), p.diff).Fill()
-		} else if p.patch != nil {
-			p.patch.Theme = a.codeTheme
-			p.patch.Font = ui.Font{Family: a.prefs.EditorFont, Size: float32(a.prefs.EditorSize)}
-			editor.View(c.Key("git-patch"), p.patch).Fill()
-		} else {
-			ui.Column(c).Grow(1).FillWidth().AlignItems(ui.Center).Justify(ui.Center).Gap(12).Children(func() {
-				icon(c, "git", 32)
-				text := "选择一个文件，查看修改"
-				if p.state.Root == "" {
-					text = "仅管理当前打开的 Git 仓库"
-				} else if len(p.state.Files) == 0 {
-					text = "工作区干净"
-				}
-				muted(c, text)
-			})
-		}
+		})
 	})
 }
 func (a *app) gitDialog(c *ui.Context) {

@@ -94,8 +94,12 @@ func TestGitMigrationNativeViews(t *testing.T) {
 	a.git.advanced.rawPatch, _ = g.GitDiff(p.Path, "a.go", false, "")
 	a.git.filePath = "a.go"
 	a.git.advanced.lineMode = true
-	for _, mode := range []string{"partial", "graph", "references", "pull", "ignore"} {
+	for _, mode := range []string{"partial", "graph", "references", "sidebar", "workspace", "pull", "ignore"} {
 		t.Run(mode, func(t *testing.T) {
+			width := 1100
+			if mode == "sidebar" {
+				width = 246
+			}
 			tt := ui.NewTester(func(c *ui.Context) {
 				c.SetTheme(a.theme)
 				switch mode {
@@ -105,6 +109,15 @@ func TestGitMigrationNativeViews(t *testing.T) {
 					a.gitHistoryView(c)
 				case "references":
 					a.gitRepositoryNavigation(c)
+				case "sidebar":
+					a.git.tab = "变更"
+					a.gitSidebar(c)
+				case "workspace":
+					a.git.tab = "变更"
+					ui.Row(c).Fill().Children(func() {
+						ui.Box(c).Width(226).FillHeight().Children(func() { a.gitSidebar(c) })
+						ui.Box(c).Grow(1).MinWidth(0).FillHeight().Children(func() { a.gitContent(c) })
+					})
 				case "pull":
 					a.git.dialog = gitPanelDialog{open: true, kind: "pull", title: "拉取", mode: "merge", commit: true}
 					a.gitDialog(c)
@@ -112,7 +125,7 @@ func TestGitMigrationNativeViews(t *testing.T) {
 					a.git.dialog = gitPanelDialog{open: true, kind: "ignore", title: "忽略", mode: "exact", scope: "global", ref: "build.log"}
 					a.gitDialog(c)
 				}
-			}, 1100, 700)
+			}, width, 700)
 			tt.Frame()
 			if out := os.Getenv("OMNICODE_GIT_SCREENSHOTS"); out != "" {
 				_ = os.MkdirAll(out, 0700)
