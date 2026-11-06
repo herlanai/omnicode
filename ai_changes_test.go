@@ -71,8 +71,12 @@ func TestAIReviewRejectAndSymlink(t *testing.T) {
 	if applyAIChange(root, c) == nil {
 		t.Fatal("symlink escape allowed")
 	}
-	if _, err := prepareAIReview(root, t.TempDir(), true); err == nil {
-		t.Fatal("snapshot followed symlink")
+	review, err := prepareAIReview(root, t.TempDir(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(review.Work, "link")); !os.IsNotExist(err) {
+		t.Fatal("external link copied", err)
 	}
 }
 func TestAIIsolatedApprovalEndToEnd(t *testing.T) {
@@ -82,7 +86,15 @@ func TestAIIsolatedApprovalEndToEnd(t *testing.T) {
 	root := t.TempDir()
 	engine := filepath.Join(t.TempDir(), "fake-agent")
 	// Try both normal relative writes and an absolute write to the real workspace.
-	script := "#!/bin/sh\nprintf 'proposal' > proposed.txt\nif printf 'escaped' > '" + filepath.Join(root, "escape.txt") + "'; then exit 9; fi\nprintf 'ready'\n"
+	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+	// npm launchers use env to find the interpreter installed beside them.
+	if err := os.Symlink("/bin/sh", filepath.Join(filepath.Dir(engine), "node")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(root, ".clinerules")); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/usr/bin/env node\nprintf 'proposal' > proposed.txt\nif printf 'escaped' > '" + filepath.Join(root, "escape.txt") + "'; then exit 9; fi\nprintf 'ready'\n"
 	os.WriteFile(engine, []byte(script), 0700)
 	a := newApp(root)
 	a.prefs.Engine = "CodeBuddy CLI"
@@ -124,6 +136,12 @@ func TestDSHLiveApproval(t *testing.T) {
 	path := filepath.Join(root, "note.txt")
 	os.WriteFile(path, []byte("before\n"), 0644)
 	a := newApp(root)
+	store, err := openProjectStore(filepath.Join(t.TempDir(), "cache.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.db.Close()
+	a.projects = store
 	a.prefs.Engine = "DSH"
 	a.ai.draft = "把当前工作目录的 note.txt 内容替换为 after，文件末尾保留换行。只修改这个文件，完成后简短回复。"
 	a.sendAI()
@@ -221,5 +239,66 @@ func TestAIObservesChangesWhileRunning(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAIReviewInternalRulesLink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "rules.md")
+	put(t, target, "original")
+	if err := os.Symlink(target, filepath.Join(root, ".clinerules")); err != nil {
+		t.Fatal(err)
+	}
+	r, err := prepareAIReview(root, t.TempDir(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(r.Work, ".clinerules")
+	if data, err := os.ReadFile(alias); err != nil || string(data) != "original" {
+		t.Fatal("missing rules", err)
+	}
+	put(t, alias, "changed")
+	if data, err := os.ReadFile(target); err != nil || string(data) != "original" {
+		t.Fatal("unapproved edit escaped", err)
+	}
+	changes, err := r.scan()
+	if err != nil || len(changes) != 1 || changes[0].Path != "rules.md" {
+		t.Fatal(changes, err)
+	}
+	if err := os.Remove(filepath.Join(r.Work, "rules.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/outside", filepath.Join(r.Work, "rules.md")); err != nil {
+		t.Fatal(err)
+	}
+	changes, err = r.scan()
+	if err != nil || len(changes) != 0 {
+		t.Fatal("link replacement appeared as deletion", changes, err)
+	}
+}
+
+func TestLargeProjectAIReview(t *testing.T) {
+	for _, approval := range []bool{true, false} {
+		root := t.TempDir()
+		path := filepath.Join(root, "asset.bin")
+		put(t, path, "")
+		if err := os.Truncate(path, 129<<20); err != nil {
+			t.Fatal(err)
+		}
+		put(t, filepath.Join(root, "main.go"), "before")
+		r, err := prepareAIReview(root, t.TempDir(), approval)
+		if err != nil {
+			t.Fatal(err)
+		}
+		put(t, filepath.Join(r.Work, "main.go"), "edited")
+		// An editor may preserve the file size and timestamp.
+		stamp := r.Baseline["main.go"].modified
+		if err := os.Chtimes(filepath.Join(r.Work, "main.go"), stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+		changes, err := r.scan()
+		if err != nil || len(changes) != 1 || changes[0].Path != "main.go" || string(changes[0].Before.Data) != "before" || string(changes[0].After.Data) != "edited" {
+			t.Fatalf("approval=%v, changes=%v, error=%v", approval, changes, err)
+		}
 	}
 }

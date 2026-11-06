@@ -21,6 +21,8 @@ const maxFileSize = 8 << 20
 var errConflict = errors.New("文件已被其他程序修改，请重新打开或另存为")
 
 type document struct {
+	vim         vimEditor
+	http        *httpPanel
 	sheet       *spreadsheetView
 	slides      *slidesView
 	kind        fileKind

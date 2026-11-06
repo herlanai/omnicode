@@ -23,6 +23,7 @@ func TestPreferencesRoundTrip(t *testing.T) {
 	p.Theme = "深色"
 	p.EditorFont = "Menlo"
 	p.EditorSize = 17
+	p.VimMode = true
 	p.Engine = "DSH"
 	p.DSHPath = "/opt/bin/dsh"
 	p.Models = append(p.Models, modelProfile{Name: "Custom", Model: "custom", Provider: "local", API: "openai-completions", BaseURL: "http://localhost:8000/v1", KeyEnv: "LOCAL_KEY"})
@@ -77,7 +78,8 @@ func TestSettingsNativeLayout(t *testing.T) {
 	a := newApp("")
 	for _, tab := range []string{"外观", "AI 引擎"} {
 		a.settingsTab = tab
-		view := ui.NewTester(a.settingsView, 760, 680)
+		a.settingsOpen = true
+		view := ui.NewTester(a.view, 760, 680)
 		if view.Image().Bounds().Dx() != 760 {
 			t.Fatal("invalid layout")
 		}
@@ -128,5 +130,39 @@ func TestDeepSeekEndpointMigration(t *testing.T) {
 	}
 	if got.Models[0].BaseURL != "https://api.deepseek.com" || got.Models[1].BaseURL != "" || got.Models[2].BaseURL != custom.BaseURL {
 		t.Fatalf("incorrect endpoint migration: %+v", got.Models)
+	}
+}
+
+func TestWorkspaceSettingsNavigation(t *testing.T) {
+	a := newApp("")
+	a.newFile()
+	doc := a.current()
+	v := ui.NewTester(a.view, 1100, 720)
+	for _, label := range []string{"设置  ⌘ ,", "AI 引擎", "返回工作区"} {
+		if err := v.Click(label); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a.settingsOpen || a.current() != doc || a.settingsTab != "AI 引擎" {
+		t.Fatal("settings navigation lost workspace state")
+	}
+	a.showSettings()
+	v.Frame()
+	v.Key(ui.Cmd, ui.KeyW)
+	if a.settingsOpen || a.current() != doc {
+		t.Fatal("closing settings closed the editor instead")
+	}
+}
+
+func TestSettingsAndScheduleSharedNavigation(t *testing.T) {
+	a := newApp("")
+	v := ui.NewTester(a.view, 800, 520)
+	for _, label := range []string{"设置  ⌘ ,", "AI 引擎", "定时任务", "设置  ⌘ ,", "切换侧栏", "切换侧栏", "文件浏览器"} {
+		if err := v.Click(label); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a.settingsOpen || a.schedules.open || !a.sidebar || a.settingsTab != "AI 引擎" {
+		t.Fatal("shared navigation lost page state")
 	}
 }

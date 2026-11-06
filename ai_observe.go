@@ -32,7 +32,7 @@ func runAIObserved(ctx context.Context, command, env []string, r *aiReview, even
 			}
 			return latest, err
 		case <-ticker.C:
-			changes, err := r.scan()
+			changes, err := r.scanChanges(false)
 			if err != nil {
 				continue
 			}

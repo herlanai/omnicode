@@ -129,7 +129,15 @@ func (a *app) applyFilePrompt() error {
 }
 func (a *app) fileMenu(c *ui.Context, path string, dir, root bool) func(*ui.Menu) {
 	return func(m *ui.Menu) {
+		if !a.activateForPath(path) {
+			return
+		}
 		a.treeSelection = path
+		if root || !dir {
+			if m.Item("AI 修改备份…").Chosen() {
+				a.showAIBackups(path, root)
+			}
+		}
 		if !dir && isWebFile(path) {
 			if m.Item("预览").Chosen() {
 				a.previewWeb(path)
@@ -139,6 +147,9 @@ func (a *app) fileMenu(c *ui.Context, path string, dir, root bool) func(*ui.Menu
 		target := path
 		if !dir {
 			target = filepath.Dir(path)
+		}
+		if m.Item("在此目录打开终端").Chosen() {
+			a.openTerminal(target, "")
 		}
 		if m.Item("新建文件…").Chosen() {
 			a.askFile("新建文件", target)

@@ -27,7 +27,7 @@ go run .
 go run . /path/to/project                    # 打开项目
 go run . /path/to/project /path/to/main.go   # 同时打开文件
 make build                                 # bin/omnicode
-make bundle                                # macOS: .app + bin/Omnicode-macOS-arm64-build<N>.dmg
+make bundle                                # macOS: .app + bin/Omnicode-macOS-arm64.dmg
 make test
 ```
 
@@ -45,7 +45,7 @@ macOS 原生窗口使用 Golet 的 GPU 渲染。纯 Go 构建不要求 Node.js �
 - 独立图片查看器：PNG、JPEG、GIF（首帧）、WebP、BMP、TIFF、SVG，支持缩放、100% 和适应窗口。
 - 独立 PDF 阅读器：macOS Core Graphics 渲染，上一页/下一页、缩放和适应窗口。当前为页面图片预览，暂不支持文本选择、搜索、批注和密码解锁。单页渲染最长边限制为 1800 像素。
 - 图片与 PDF 只读，不会进入自动保存流程。媒体文件上限 128 MiB，位图上限 4000 万像素；HEIC、AVIF、ICO 等暂不支持。
-- Golet 原生终端：Ctrl+反引号或左侧代码图标开关，默认底部，可移到右侧，支持拖动分隔线。隐藏保留会话，点击重启图标会结束旧会话并在当前工作区重新启动 shell，关闭应用释放终端。
+- Golet 原生终端支持最多 16 个独立 Shell，每个标签可上下或左右分为两个窗格。Ctrl+反引号显示或隐藏终端，隐藏时命令继续运行。点 + 从当前项目新建标签，文件树右键可指定启动目录。窗格菜单支持分屏、重命名、清屏、重启、关闭及把当前屏幕文字带入 AI 草稿。放大镜可搜索屏幕和滚动历史。
 - 终端使用 Golet 自带的 libghostty-vt（动态加载、无 CGO）；`make bundle` 将运行库复制进应用，成品不依赖首次联网下载。
 - 打开、自动保存、另存为；已有文件停止输入 750 ms 后自动保存，关闭前立即保存；新文件使用 ⌘ S 首次选择路径。保存失败保留修改并在状态栏提示，不会反复重试同一版本。同目录临时文件加原子替换，保留权限和 CRLF/LF，检测外部修改并拒绝覆盖。
 - Go 源码格式化、自动换行、光标位置和编码状态。
@@ -118,11 +118,11 @@ Excel 使用纯 Go 的 [Excelize](https://xuri.me/excelize/en/) 解析。表格�
 
 ### 设置与 AI 引擎配置
 
-左下角齿轮、系统状态栏菜单或 `⌘ ,` 打开独立设置窗口。支持跟随系统/浅色/深色主题、界面与编辑器字体、界面/编辑器/终端字号；修改即时生效并自动保存到本地 SQLite。
+左下角齿轮、系统状态栏菜单或 `⌘ ,` 打开主窗口内的设置页面。支持跟随系统/浅色/深色主题、界面与编辑器字体、界面/编辑器/终端字号；修改即时生效并自动保存到本地 SQLite。
 
 内置 pi-coding-agent、CodeBuddy CLI、DSH 三个配置入口，可选择默认引擎并记录各自的 CLI 路径。Pi 和 Node 已随 Omnicode 安装包内置，只需配置模型 API Key；CodeBuddy CLI 与 DSH 需自行安装并配置凭据。打开设置时自动识别默认 CLI 路径，保留手动指定的路径；DSH 也支持直接识别 /Applications 或 ~/Applications 中 DeepSeek Harness.app 的内置启动器，无需额外注册全局命令。右上角星芒图标打开右侧 AI 对话区，发送任务时启动所选引擎，工作目录绑定当前项目。pi 模型支持 deepseek-flash、glm-5.3 模板及自定义模型，可设置默认模型、Provider ID、实际 Model ID、API 地址、协议和API Key。模板不代表服务商一定提供同名 API，请按实际服务填写。
 
-“导出默认模型配置”导出所选默认模型的 pi `models.json` 格式，使用环境变量占位符引用密钥，导出文件不包含实际 Key。导出位置由用户选择，不自动覆盖 `~/.pi/agent/models.json`；已有配置请手动合并。参考 [pi 模型文档](https://pi.dev/docs/latest/models)、[CodeBuddy CLI](https://www.codebuddy.cn/cli/)、[DSH](https://deepseek-harness.github.io/deepseek-harness/guide/quickstart)。
+参考 [pi 模型文档](https://pi.dev/docs/latest/models)、[CodeBuddy CLI](https://www.codebuddy.cn/cli/)、[DSH](https://deepseek-harness.github.io/deepseek-harness/guide/quickstart)。
 
 原生 PPTX 预览回归检查（macOS 图形会话）：`OMNICODE_PPTX_NATIVE_TEST=/absolute/path/to/fixture.pptx go test -run ^TestQuickLookNativePreview$ -count=1`。测试检查内嵌原版视图、切换标签的隐藏与恢复、关闭标签的释放，并将原生视图渲染写入 `artifacts/pptx-inline-preview.png`。
 
@@ -142,11 +142,13 @@ DSH 集成依据 [内置命令运行时](https://github.com/deepseek-ai/deepseek
 
 AI 文件修改默认使用“修改前审批”（设置 → AI 引擎 → 文件修改权限）。引擎在临时项目副本中生成变更，macOS 系统沙箱限制写入范围，原项目不可写；仅允许临时运行目录及所选 CLI 自身的状态目录写入。每 700 ms 检查工作区变更，显示文件、首个修改行及原生左右差异预览，任务结束后可逐文件批准、全部批准或拒绝。批准前校验原文件是否被修改、路径是否被替换为符号链接，遇到冲突不会覆盖。未处理的审批会阻止切换项目、新建对话与正常关闭窗口。
 
-“完全控制”直接在原项目运行，不再等待 Omnicode 文件审批，仍显示观察到的文件变更与差异。引擎自身的权限规则继续生效。观察范围是任务期间的工作区变化，包含这期间用户或其他程序的修改，不将其误认为精确的工具调用事件。两种模式均略过 .git、node_modules、vendor、.idea、bin、artifacts、.venv；项目快照上限 128 MiB，非忽略目录中的符号链接和特殊文件会拒绝启动，避免错误追踪与越界应用。空目录变更不在审批范围内。审批副本中的构建命令可能因依赖目录未复制而不可用。当前仅 macOS 支持隔离审批，不支持的平台明确拒绝该模式，不降级为直接写入。
+批准 AI 对已有文件的修改或删除时，Omnicode 会先将原内容和文件权限保存到本地 SQLite。打开文件后点击路径栏的历史图标，在独立对比窗口中切换版本，左侧显示当前磁盘内容，右侧显示备份内容；核对差异后可恢复。已删除文件可从文件树右键项目根目录的“AI 修改备份…”找回。备份按文件完整路径保留多个版本。
+
+“完全控制”直接在原项目运行，不再等待 Omnicode 文件审批，仍显示观察到的文件变更与差异。引擎自身的权限规则继续生效。观察范围是任务期间的工作区变化，包含这期间用户或其他程序的修改，不将其误认为精确的工具调用事件。两种模式均略过 .git、node_modules、vendor、.idea、bin、artifacts、.venv；原始版本保存在本机临时目录，按文件流式复制与校验，审批副本会重建指向已复制内容的项目内符号链接，跳过外部、失效或目标未复制的链接。审批只追踪普通文件的变化；遇到其他特殊文件会拒绝启动。空目录变更不在审批范围内。审批副本中的构建命令可能因依赖目录未复制而不可用。当前仅 macOS 支持隔离审批，不支持的平台明确拒绝该模式，不降级为直接写入。
 
 内置 Pi 固定为 0.81.1，Node 固定为 24.15.0。`make pi-runtime` 根据 `packaging/pi/package-lock.json` 和 Node 官方 SHA-256 准备运行时，`make bundle` 自动执行此步骤并将运行时、依赖与许可证放入应用 Resources/pi。成品无需全局 Pi、npm 或 Node，也不在首次运行时下载引擎。打包对原生依赖签名，并在挂载后的 DMG 内以最小 PATH 验证 Pi 启动。安装版始终使用包内运行时，忽略旧设置遗留的外部 Pi 路径。
 
-Pi 使用 JSON 事件流：回复文本增量立即渲染，工具开始/完成/失败单独展示简洁进度，思考阶段显示状态。消息结束事件仅作兜底，不重复追加已流式显示的文本；JSON 模式的模型错误也会显示为任务失败。工具参数中的命令正文与原始工具输出不自动展示。
+Pi 和 CodeBuddy CLI 使用 JSON 事件流（CodeBuddy 需支持 `--output-format stream-json --include-partial-messages`）：回复文本增量立即渲染，工具开始/完成/失败单独展示简洁进度，思考阶段显示状态。消息结束事件仅作兜底，不重复追加已流式显示的文本；JSON 模式的模型错误也会显示为任务失败。工具参数中的命令正文与原始工具输出不自动展示。
 
 HTML/HTM 文件右键选择“预览”，在应用内打开使用系统 WebView 的网页预览窗口，支持本地 CSS、JavaScript、图片及项目根目录相对路径。刷新图标先保存已编辑的项目文件，再绕过缓存刷新页面。预览仅监听 127.0.0.1，关闭窗口即停止服务；不提供目录列表、隐藏文件或指向项目外的符号链接。页面不获得 Golet 原生桥接权限。此预览为静态文件服务，不替代 Vite、Next.js 等开发服务器。
 
@@ -158,6 +160,7 @@ HTML/HTM 文件右键选择“预览”，在应用内打开使用系统 WebView
 安装包内置 gopls v0.24.0（Go 官方）、typescript-language-server 6.0.3 + TypeScript 6.0.3，以及 vscode-langservers-extracted 4.10.0（HTML/CSS/JSON）。后两者复用应用内置 Node，不需要用户安装 Node/npm。Go 项目仍需要本机 Go SDK；启动时自动补充 Homebrew、/usr/local/go/bin 等路径。
 
 - Go、JS/TS（含 JSX/TSX）、HTML、CSS/SCSS/Less：输入时自动补全，Ctrl+Space 手动唤起，方向键选择，Tab/Enter 接受，Esc 关闭。
+- Go、JavaScript 和 TypeScript（含 JSX / TSX）文件中，右键方法名选择“查看引用”，编辑器下方按文件和行列出使用位置，点击结果即可跳转。
 - 支持语言服务提供的悬浮类型／文档、F12 或 Cmd+点击跳转定义、错误下划线；JSON 支持语法诊断，候选取决于文档上下文。
 - 未保存缓冲区同步到语言服务；后台执行、取消旧请求、UTF-16/字节偏移转换，切换项目及退出时释放进程。
 - 标准数字占位片段展开后定位到第一个输入位置；暂不支持多占位符 Tab 跳转、片段变量／转换、自动 import、多文件重构或代码修复。需要附加编辑的补全项不会展示，避免插入不完整代码。
@@ -184,3 +187,9 @@ AI 审查与提交说明读取固定的过滤快照，跳过敏感、二进制�
 边界与 poprsi 一致：标签作为历史入口，不提供标签创建／删除；无交互式变基编辑器或三方冲突编辑器。文本差异上限 2 MiB，逐行操作最多 5000 行，特殊文件使用整文件操作或终端。完整对应关系见 [迁移清单](docs/git-migration.md)。
 
 验证：`go test ./...`、`go vet ./...`；Git 回归测试使用临时仓库和本地裸远端。`OMNICODE_GIT_OCR_TEST=1 go test -run TestGitBundledOCRRuntime .` 验证内置 OCR，无需调用模型。安装包验证包括应用签名、图标、内置运行时和 Applications 快捷方式。
+
+### HTTP 请求
+
+左侧地球图标打开当前项目的 `requests.http`。已有的 `.http` 和 `.rest` 文件也可直接从文件树打开。用 `### 名称` 分隔请求，在文件开头定义 `@baseUrl = http://localhost:8080`，通过 `{{baseUrl}}` 在 URL、请求头或正文中引用。请求头与正文之间留一个空行。
+
+把光标放在目标请求内，点三角图标发送。也可选中接口地址或请求块，右键选择「run」。加号追加请求，复制图标生成可在终端复用的 cURL 命令。请求文件使用编辑器的自动保存和 Git 功能。响应只保留在当前标签页，显示状态码、耗时、响应头及最多 1 MiB 的正文。请求可取消，超时为 30 秒，重定向会显示原始 3xx 响应。

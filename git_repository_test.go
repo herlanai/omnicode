@@ -234,3 +234,65 @@ func TestParseRepositoryRename(t *testing.T) {
 		t.Fatal(files)
 	}
 }
+
+func TestGitWorkspaceDividerDrag(t *testing.T) {
+	a := newApp("")
+	a.git.visible = true
+	a.git.state = repositoryState{Root: "/tmp/example", Branch: "main"}
+	tt := ui.NewTester(a.view, 1200, 760)
+	tt.Frame()
+	nav, changes := a.sidebarWidth, a.gitChangesWidth
+	drag := func(x, delta float32) { tt.Press(x, 360); tt.Move(x+delta, 360); tt.Release(x+delta, 360); tt.Frame() }
+	drag(42+nav, 45)
+	if a.sidebarWidth != nav+45 || a.gitChangesWidth != changes {
+		t.Fatalf("navigation drag: %v, %v", a.sidebarWidth, a.gitChangesWidth)
+	}
+	drag(42+a.sidebarWidth+1+changes, -55)
+	if a.sidebarWidth != nav+45 || a.gitChangesWidth != changes-55 {
+		t.Fatalf("changes drag: %v, %v", a.sidebarWidth, a.gitChangesWidth)
+	}
+	if !tt.HasText("工作区干净") {
+		t.Fatal("preview missing after drag")
+	}
+}
+
+func TestGitBackgroundRefreshKeepsWorkspaceStable(t *testing.T) {
+	a := newApp(t.TempDir())
+	p := &a.git
+	p.root, p.visible = a.root, true
+	p.state = repositoryState{Root: a.root, Branch: "main"}
+	p.next = time.Now().Add(time.Minute)
+	tt := ui.NewTester(a.view, 1100, 700)
+	tt.Frame()
+	before, ok := tt.Find("已暂存  0")
+	if !ok {
+		t.Fatal("missing file list")
+	}
+	a.gitTask(false, "auto-refresh", func(ctx context.Context, _ string) gitPanelEvent {
+		<-ctx.Done()
+		return gitPanelEvent{state: &repositoryState{Branch: "obsolete"}}
+	})
+	old := p.events
+	tt.Frame()
+	after, ok := tt.Find("已暂存  0")
+	if !ok || after != before || p.busy || tt.HasText("正在处理…") {
+		t.Fatal("background poll changed file-list layout or entered foreground busy state")
+	}
+	if err := tt.Click("提交历史"); err != nil || p.tab != "历史" {
+		t.Fatal("navigation was blocked during refresh", err)
+	}
+	a.gitTask(false, "preview", func(context.Context, string) gitPanelEvent {
+		return gitPanelEvent{preview: true, title: "commit", patch: "new preview"}
+	})
+	ev := waitGitEvent(t, a)
+	p.events <- ev
+	select {
+	case <-old:
+	case <-time.After(time.Second):
+		t.Fatal("obsolete refresh did not stop")
+	}
+	tt.Frame()
+	if p.state.Branch != "main" || p.selection != "commit" || p.busy || p.refreshing {
+		t.Fatal("obsolete refresh replaced foreground result")
+	}
+}

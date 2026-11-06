@@ -38,11 +38,23 @@ func sandboxAICommand(command []string, r *aiReview, engine string) ([]string, [
 		}
 		b.WriteString("(allow file-write* (subpath " + strconv.Quote(p) + "))\n")
 	}
+	// The isolated workspace is writable; its sibling holds the originals used for approval.
+	if len(r.Baseline) > 0 {
+		baseline, err := filepath.EvalSymlinks(filepath.Join(r.Temp, "baseline"))
+		if err != nil {
+			return nil, nil, err
+		}
+		b.WriteString("(deny file-write* (subpath " + strconv.Quote(baseline) + "))\n")
+	}
 	b.WriteString("(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\"))\n")
 	b.WriteString("(deny file-write* (subpath " + strconv.Quote(r.Root) + "))\n")
 	path := filepath.Join(r.Temp, "sandbox.sb")
 	if err = os.WriteFile(path, []byte(b.String()), 0600); err != nil {
 		return nil, nil, err
 	}
-	return append([]string{"/usr/bin/sandbox-exec", "-f", path}, command...), []string{"TMPDIR=" + r.Temp}, nil
+	env := []string{"TMPDIR=" + r.Temp}
+	// runAI sees sandbox-exec as the executable. Keep the actual launcher's
+	// sibling tools on PATH, e.g. the Node runtime used by npm launchers.
+	env = append(env, "PATH="+filepath.Dir(command[0])+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return append([]string{"/usr/bin/sandbox-exec", "-f", path}, command...), env, nil
 }

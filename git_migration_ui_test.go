@@ -257,7 +257,7 @@ echo SNAPSHOT_ONLY
 	p.BuddyPath = cli
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, e := runGitSnapshotAI(ctx, p, root, GitReviewSnapshot{}, false, "", func(string) {})
+	out, e := runGitSnapshotAI(ctx, p, root, GitReviewSnapshot{}, false, "", func(aiEvent) {})
 	if e != nil || !strings.Contains(out, "SNAPSHOT_ONLY") {
 		t.Fatalf("%s: %v", out, e)
 	}

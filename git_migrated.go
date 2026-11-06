@@ -1560,6 +1560,11 @@ type GitReviewSnapshot struct {
 	Rules   string          `json:"reviewRules,omitempty"`
 }
 
+func sensitiveReviewPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == ".env" || strings.HasPrefix(base, ".env.") || strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".key") || base == "id_rsa" || base == "id_ed25519"
+}
+
 func (g *gitService) gitReviewSnapshot(id, scope string) (GitReviewSnapshot, error) {
 	gitMu.Lock()
 	defer gitMu.Unlock()
@@ -1585,8 +1590,7 @@ func (g *gitService) gitReviewSnapshot(id, scope string) (GitReviewSnapshot, err
 		if scope == "worktree" && file.Worktree == " " && file.Index != "?" {
 			continue
 		}
-		base := strings.ToLower(filepath.Base(file.Path))
-		if file.Conflict || base == ".env" || strings.HasPrefix(base, ".env.") || strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".key") || base == "id_rsa" || base == "id_ed25519" {
+		if file.Conflict || sensitiveReviewPath(file.Path) {
 			s.Skipped = append(s.Skipped, file.Path+"（冲突或敏感文件）")
 			continue
 		}

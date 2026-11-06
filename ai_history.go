@@ -17,11 +17,12 @@ type storedAIMessage struct {
 	Text string `json:"text"`
 }
 type storedAIChat struct {
-	Messages []storedAIMessage `json:"messages"`
-	Draft    string            `json:"draft"`
-	Engine   string            `json:"engine"`
-	Error    string            `json:"error,omitempty"`
-	Running  bool              `json:"running,omitempty"`
+	Selection *aiSelection      `json:"selection,omitempty"`
+	Messages  []storedAIMessage `json:"messages"`
+	Draft     string            `json:"draft"`
+	Engine    string            `json:"engine"`
+	Error     string            `json:"error,omitempty"`
+	Running   bool              `json:"running,omitempty"`
 }
 type aiHistoryEntry struct {
 	ID, Title string
@@ -68,14 +69,16 @@ func (s *projectStore) loadAIChat(root, id string) (storedAIChat, error) {
 	return chat, err
 }
 func (a *app) checkpointAI(force bool) bool {
-	p := &a.ai
+	return a.saveAISession(a.ai.aiSession, force)
+}
+func (a *app) saveAISession(p *aiSession, force bool) bool {
 	if a.projects == nil || !p.dirty {
 		return true
 	}
 	if !force && time.Since(p.lastSaved) < 500*time.Millisecond {
 		return true
 	}
-	if len(p.messages) == 0 && strings.TrimSpace(p.draft) == "" && p.chatID == "" {
+	if len(p.messages) == 0 && strings.TrimSpace(p.draft) == "" && p.chatID == "" && p.selection == nil {
 		p.dirty = false
 		return true
 	}
@@ -94,7 +97,7 @@ func (a *app) checkpointAI(force bool) bool {
 		}
 		p.chatID = hex.EncodeToString(id[:])
 	}
-	chat := storedAIChat{Draft: p.draft, Engine: p.engine, Error: p.err, Running: p.running}
+	chat := storedAIChat{Selection: p.selection, Draft: p.draft, Engine: p.engine, Error: p.err, Running: p.running}
 	title := p.draft
 	for _, m := range p.messages {
 		chat.Messages = append(chat.Messages, storedAIMessage{m.role, m.text})
@@ -115,6 +118,7 @@ func (a *app) checkpointAI(force bool) bool {
 		p.storageErr = "对话保存失败：" + err.Error()
 		return false
 	}
+	a.ai.historyRoot = ""
 	p.root = root
 	p.dirty = false
 	p.storageErr = ""
@@ -133,7 +137,11 @@ func (a *app) restoreAIChat(root, id string) {
 		return
 	}
 	a.discardAIChanges()
-	p := &a.ai
+	a.ai.aiSession.applyStoredChat(root, id, chat)
+}
+
+func (p *aiSession) applyStoredChat(root, id string, chat storedAIChat) {
+	p.selection = chat.Selection
 	p.progress = ""
 	p.activities = nil
 	p.messages = nil
@@ -185,7 +193,99 @@ func (a *app) aiHistoryMenu(m *ui.Menu) {
 	for _, entry := range entries {
 		label := entry.Title + " · " + time.Unix(0, entry.Updated).Local().Format("01-02 15:04")
 		if m.Item(label).Chosen() {
-			a.restoreAIChat(a.root, entry.ID)
+			a.openHistoryEntry(entry.ID)
 		}
 	}
+}
+
+func (a *app) openHistoryEntry(id string) {
+	for _, tab := range a.ai.tabs {
+		if tab.chatID == id && tab.root == a.root {
+			a.ai.aiSession = tab
+			a.showAI()
+			return
+		}
+	}
+	chat, err := a.projects.loadAIChat(a.root, id)
+	if err != nil {
+		a.report(err)
+		return
+	}
+	a.newAITab()
+	a.ai.aiSession.applyStoredChat(a.root, id, chat)
+	a.showAI()
+}
+
+func (a *app) deleteHistoryEntry(id string) {
+	var open *aiSession
+	for _, tab := range a.ai.tabs {
+		if tab.root == a.root && tab.chatID == id {
+			if tab.running || tab.pending() {
+				a.notice = "请先结束 AI 任务并处理待批准修改"
+				return
+			}
+			open = tab
+			break
+		}
+	}
+	_, err := a.projects.db.Execute(context.Background(), "DELETE FROM ai_conversations WHERE workspace=? AND id=?", a.root, id)
+	if err != nil {
+		a.report(err)
+		return
+	}
+	if open != nil {
+		open.discardChanges()
+		a.removeAITab(open)
+	}
+	a.ai.historyRoot = ""
+}
+
+func (a *app) sidebarAIHistory(c *ui.Context) {
+	if a.projects == nil || a.root == "" {
+		return
+	}
+	if a.ai.historyRoot != a.root {
+		entries, err := a.projects.aiHistory(a.root)
+		a.report(err)
+		a.ai.history = entries
+		a.ai.historyRoot = a.root
+	}
+	if len(a.ai.history) == 0 {
+		return
+	}
+	ui.Column(c).FillWidth().Gap(4).Padding(8, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(c.Theme().Border).Children(func() {
+		expanded := !a.ai.historyCollapsed
+		header := ui.ButtonBase(c.Key("history-toggle")).FillWidth().Height(28).Padding(0, 8).Gap(7).AlignItems(ui.Center).Justify(ui.Start).Radius(6).Label("AI 对话").Expanded(expanded).OnClick(func() { a.ai.historyCollapsed = !a.ai.historyCollapsed })
+		if header.Hovered() {
+			header.Background(c.Theme().SurfaceHover)
+		}
+		header.Children(func() {
+			symbol := "chevron-right"
+			if expanded {
+				symbol = "chevron-down"
+			}
+			icon(c, symbol, 12)
+			muted(c, "AI 对话").Bold()
+		})
+		if !expanded {
+			return
+		}
+		for _, entry := range a.ai.history {
+			row := ui.ButtonBase(c.Key(entry.ID)).FillWidth().Height(28).Padding(0, 8).Gap(7).AlignItems(ui.Center).Justify(ui.Start).Radius(6).Label(entry.Title).Tooltip(entry.Title).OnClick(func() { a.openHistoryEntry(entry.ID) })
+			row.ContextMenu(func(m *ui.Menu) {
+				if m.Item("删除对话").Chosen() {
+					a.deleteHistoryEntry(entry.ID)
+				}
+			})
+			if a.ai.visible && a.ai.aiSession != nil && a.ai.chatID == entry.ID {
+				row.Background(c.Theme().Sidebar.Mix(c.Theme().Accent, 0.14))
+			} else if row.Hovered() {
+				row.Background(c.Theme().SurfaceHover)
+			}
+			row.Transition(chromeTransition).Children(func() {
+				icon(c, "history", 14)
+				ui.Text(c, entry.Title).FontSize(12).MinWidth(0).MaxLines(1)
+			})
+		}
+	})
 }

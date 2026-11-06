@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -21,15 +24,27 @@ type aiChange struct {
 }
 type aiReview struct {
 	Root, Work, Temp string
-	Baseline         map[string]aiFile
+	Baseline         map[string]aiBaseline
+	Links            map[string]bool
 	Approval         bool
 	Changes          []aiChange
 }
 
-func snapshotAI(root string) (map[string]aiFile, error) {
-	files := map[string]aiFile{}
-	var total int64
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+type aiBaseline struct {
+	hash     [sha256.Size]byte
+	size     int64
+	modified time.Time
+	mode     fs.FileMode
+}
+
+// Walk metadata first. Only the visitor decides whether file contents are needed.
+func walkAIFiles(root string, links map[string]bool, visit func(*os.Root, string, fs.FileInfo) error) error {
+	tree, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer tree.Close()
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -46,9 +61,12 @@ func snapshotAI(root string) (map[string]aiFile, error) {
 			}
 			return nil
 		}
-		// Never follow links into the original workspace or outside it.
 		if d.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("审批快照暂不支持符号链接：%s", rel)
+			if rel == "." {
+				return fmt.Errorf("项目根目录已变为符号链接")
+			}
+			links[rel] = true
+			return nil
 		}
 		info, err := d.Info()
 		if err != nil {
@@ -57,69 +75,197 @@ func snapshotAI(root string) (map[string]aiFile, error) {
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("不支持的文件类型：%s", rel)
 		}
-		total += info.Size()
-		if total > 128<<20 {
-			return fmt.Errorf("项目快照超过 128 MB，请打开较小的项目目录")
+		return visit(tree, rel, info)
+	})
+}
+
+func copyAIFile(target string, src io.Reader, mode fs.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(f, src)
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
+}
+
+func prepareAIReview(root, temp string, approval bool) (*aiReview, error) {
+	if inside(root, temp) {
+		return nil, fmt.Errorf("AI 临时目录必须位于项目之外")
+	}
+	links := map[string]bool{}
+	r := &aiReview{Root: root, Work: root, Temp: temp, Approval: approval, Links: links, Baseline: map[string]aiBaseline{}}
+	if approval {
+		r.Work = filepath.Join(temp, "workspace")
+		if err := os.MkdirAll(r.Work, 0700); err != nil {
+			return nil, err
 		}
-		data, err := os.ReadFile(path)
+	}
+	err := walkAIFiles(root, links, func(tree *os.Root, path string, info fs.FileInfo) error {
+		src, err := tree.Open(path)
 		if err != nil {
 			return err
 		}
-		files[rel] = aiFile{data, info.Mode().Perm()}
+		defer src.Close()
+		baseline := filepath.Join(temp, "baseline", path)
+		h := sha256.New()
+		if err := copyAIFile(baseline, io.TeeReader(src, h), 0600); err != nil {
+			return err
+		}
+		mode := info.Mode().Perm()
+		if approval {
+			f, err := os.Open(baseline)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			work := filepath.Join(r.Work, path)
+			if err := copyAIFile(work, f, mode); err != nil {
+				return err
+			}
+			if err := os.Chmod(work, mode); err != nil {
+				return err
+			}
+			info, err = os.Stat(work)
+			if err != nil {
+				return err
+			}
+		}
+		r.Baseline[path] = aiBaseline{[32]byte(h.Sum(nil)), info.Size(), info.ModTime(), mode}
 		return nil
 	})
-	return files, err
-}
-func prepareAIReview(root, temp string, approval bool) (*aiReview, error) {
-	baseline, err := snapshotAI(root)
 	if err != nil {
 		return nil, err
 	}
-	r := &aiReview{Root: root, Work: root, Temp: temp, Baseline: baseline, Approval: approval}
 	if !approval {
 		return r, nil
 	}
-	r.Work = filepath.Join(temp, "workspace")
-	if err = os.MkdirAll(r.Work, 0700); err != nil {
-		return nil, err
-	}
-	for path, f := range baseline {
-		target := filepath.Join(r.Work, path)
-		if err = os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+	// Rebase internal aliases onto files and directories actually present in the copy.
+	// Never recreate a link with its original absolute destination.
+	if len(links) > 0 {
+		canonical, err := filepath.EvalSymlinks(root)
+		if err != nil {
 			return nil, err
 		}
-		if err = os.WriteFile(target, f.Data, f.Mode); err != nil {
-			return nil, err
+		for path := range links {
+			resolved, err := filepath.EvalSymlinks(filepath.Join(canonical, path))
+			if err != nil || resolved == canonical || !inside(canonical, resolved) {
+				continue
+			}
+			rel, err := filepath.Rel(canonical, resolved)
+			if err != nil {
+				return nil, err
+			}
+			dest := filepath.Join(r.Work, rel)
+			if _, err = os.Lstat(dest); os.IsNotExist(err) {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+			alias := filepath.Join(r.Work, path)
+			dir := filepath.Dir(alias)
+			target, err := filepath.Rel(dir, dest)
+			if err != nil {
+				return nil, err
+			}
+			if err = os.MkdirAll(dir, 0755); err != nil {
+				return nil, err
+			}
+			if err = os.Symlink(target, alias); err != nil {
+				return nil, err
+			}
 		}
 	}
+
 	return r, nil
 }
 func (r *aiReview) scan() ([]aiChange, error) {
-	current, err := snapshotAI(r.Work)
+	return r.scanChanges(true)
+}
+
+func (r *aiReview) scanChanges(final bool) ([]aiChange, error) {
+	links := map[string]bool{}
+	seen := map[string]bool{}
+	var changes []aiChange
+	beforeFile := func(path string, b aiBaseline) (*aiFile, error) {
+		data, err := os.ReadFile(filepath.Join(r.Temp, "baseline", path))
+		if err != nil {
+			return nil, err
+		}
+		if sha256.Sum256(data) != b.hash {
+			return nil, fmt.Errorf("原始版本校验失败：%s", path)
+		}
+		return &aiFile{data, b.mode}, nil
+	}
+	err := walkAIFiles(r.Work, links, func(tree *os.Root, path string, info fs.FileInfo) error {
+		seen[path] = true
+		b, exists := r.Baseline[path]
+		mode := info.Mode().Perm()
+		if !exists && underAILink(path, r.Links) {
+			return nil
+		}
+		if exists && mode == b.mode && info.Size() == b.size {
+			if !final && info.ModTime().Equal(b.modified) {
+				return nil
+			}
+			f, err := tree.Open(path)
+			if err != nil {
+				return err
+			}
+			h := sha256.New()
+			_, err = io.Copy(h, f)
+			f.Close()
+			if err != nil {
+				return err
+			}
+			if [32]byte(h.Sum(nil)) == b.hash {
+				return nil
+			}
+		}
+		data, err := tree.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		change := aiChange{Path: path, After: &aiFile{data, mode}}
+		if exists {
+			change.Before, err = beforeFile(path, b)
+			if err != nil {
+				return err
+			}
+		}
+		changes = append(changes, change)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var changes []aiChange
-	for path, before := range r.Baseline {
-		after, ok := current[path]
-		if !ok {
-			b := before
-			changes = append(changes, aiChange{Path: path, Before: &b})
-			continue
-		}
-		if !bytes.Equal(before.Data, after.Data) || before.Mode != after.Mode {
-			b, a := before, after
-			changes = append(changes, aiChange{path, &b, &a})
-		}
-	}
-	for path, after := range current {
-		if _, ok := r.Baseline[path]; !ok {
-			a := after
-			changes = append(changes, aiChange{Path: path, After: &a})
+	for path, b := range r.Baseline {
+		if !seen[path] && !underAILink(path, links) {
+			before, err := beforeFile(path, b)
+			if err != nil {
+				return nil, err
+			}
+			changes = append(changes, aiChange{Path: path, Before: before})
 		}
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
 	return changes, nil
+}
+
+// Link replacements are outside regular-file review, including their descendants.
+func underAILink(path string, links map[string]bool) bool {
+	for part := path; part != "."; part = filepath.Dir(part) {
+		if links[part] {
+			return true
+		}
+	}
+	return false
 }
 func (change aiChange) label() string {
 	action := "修改"

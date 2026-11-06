@@ -231,9 +231,7 @@ func (a *app) gitAdvancedMenu(m *ui.Menu) {
 		golet.Shell.ShowItemInFolder(a.root)
 	}
 	if m.Item("打开内置终端").Chosen() {
-		if !a.terminal.visible {
-			a.toggleTerminal()
-		}
+		a.openTerminal(a.root, "")
 	}
 }
 func (a *app) gitAdvancedDialog(c *ui.Context, d *gitPanelDialog) bool {

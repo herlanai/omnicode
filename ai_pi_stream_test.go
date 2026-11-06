@@ -8,7 +8,7 @@ import (
 
 func TestPiStreamChunksAndNoDuplicates(t *testing.T) {
 	events := make(chan aiEvent, 20)
-	s := &piEventStream{ctx: context.Background(), events: events}
+	s := &aiEventStream{ctx: context.Background(), events: events}
 	input := `{"type":"message_start","message":{"role":"assistant"}}
 {"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"你好"}}
 {"type":"tool_execution_start","toolCallId":"one","toolName":"edit","args":{"path":"main.go"}}
@@ -41,7 +41,7 @@ func TestPiStreamChunksAndNoDuplicates(t *testing.T) {
 }
 func TestPiStreamFallbackAndErrors(t *testing.T) {
 	events := make(chan aiEvent, 10)
-	s := &piEventStream{ctx: context.Background(), events: events}
+	s := &aiEventStream{ctx: context.Background(), events: events}
 	s.Write([]byte(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"fallback"}]}}`))
 	if err := s.flush(); err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestPiStreamFallbackAndErrors(t *testing.T) {
 func TestPiStreamCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	s := &piEventStream{ctx: ctx, events: make(chan aiEvent)}
+	s := &aiEventStream{ctx: ctx, events: make(chan aiEvent)}
 	if _, err := s.Write([]byte("{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"x\"}}\n")); err == nil {
 		t.Fatal("cancelled stream blocked")
 	}

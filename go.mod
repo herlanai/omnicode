@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/HyperparameterSI/golet v0.0.0
 	github.com/ebitengine/purego v0.11.1
+	github.com/pmezard/go-difflib v1.0.0
 	github.com/xuri/excelize/v2 v2.11.0
  gopkg.in/yaml.v3 v3.0.1
 	golang.org/x/image v0.46.0

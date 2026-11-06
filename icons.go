@@ -1,11 +1,19 @@
 package main
 
-import "github.com/HyperparameterSI/golet/backend/ui"
+import (
+	"time"
+
+	"github.com/HyperparameterSI/golet/backend/ui"
+)
 
 var icons = map[string]*ui.SVG{}
 
 func init() {
 	paths := map[string]string{
+		"clock":         `<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>`,
+		"play":          `<path d="m7 4 13 8-13 8z"/>`,
+		"maximize":      `<path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/>`,
+		"more":          `<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>`,
 		"tag":           `<path d="M3 3h8l10 10-8 8L3 11z"/><circle cx="7.5" cy="7.5" r="1"/>`,
 		"remote":        `<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18z"/>`,
 		"trash":         `<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>`,
@@ -21,6 +29,7 @@ func init() {
 		"stop":          `<rect x="6" y="6" width="12" height="12" rx="2"/>`,
 		"slides":        `<rect x="3" y="3" width="18" height="13" rx="2"/><path d="M12 16v5m-4 0 4-3 4 3M7 7h10M7 11h6"/>`,
 		"external":      `<path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/>`,
+		"appearance":    `<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/>`,
 		"settings":      `<path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z"/><circle cx="12" cy="12" r="3"/>`,
 		"check":         `<path d="m5 12 4 4L19 6"/>`,
 		"chevron-left":  `<path d="m15 5-7 7 7 7"/>`,
@@ -36,6 +45,7 @@ func init() {
 		"plus":          `<path d="M12 5v14M5 12h14"/>`,
 		"refresh":       `<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 6a8 8 0 0 1 14 6M18 18a8 8 0 0 1-14-6"/>`,
 		"wrap":          `<path d="M3 6h18M3 11h14a4 4 0 0 1 0 8h-4m3-3-3 3 3 3M3 16h5"/>`,
+		"terminal":      `<path d="m5 6 6 6-6 6m8 0h6"/>`,
 		"code":          `<path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 22"/>`,
 	}
 	for name, path := range paths {
@@ -46,5 +56,22 @@ func icon(c *ui.Context, name string, size float32) ui.Element {
 	return ui.Icon(c, icons[name]).Size(size, size).TextColor(c.Theme().TextMuted)
 }
 func iconButton(c *ui.Context, key, name, label string, fn func()) ui.Element {
-	return ui.Button(c.Key(key), "").Size(34, 32).Padding(7).Border(0, ui.Transparent).Background(ui.Transparent).Radius(7).Label(label).Tooltip(label).OnClick(fn).Children(func() { icon(c, name, 18) })
+	return toolButton(c, key, name, label, false, fn)
+}
+
+var chromeTransition = ui.ElementTransition{Colors: true, Duration: 110 * time.Millisecond}
+
+func toolButton(c *ui.Context, key, name, label string, active bool, fn func()) ui.Element {
+	t := c.Theme()
+	b := ui.Button(c.Key(key), "").Size(32, 32).MinWidth(0).MinHeight(0).Padding(7).Border(0, ui.Transparent).Radius(6).Label(label).Tooltip(label).OnClick(fn)
+	bg, fg := ui.Transparent, t.TextMuted
+	if active {
+		bg, fg = t.Surface.Mix(t.Accent, 0.14), t.Accent
+	}
+	if b.Pressed() {
+		bg, fg = t.SurfacePressed, t.Text
+	} else if b.Hovered() {
+		bg, fg = t.SurfaceHover, t.Text
+	}
+	return b.Background(bg).Transition(chromeTransition).Children(func() { icon(c, name, 18).TextColor(fg) })
 }

@@ -8,15 +8,17 @@ import (
 	"strings"
 )
 
-type piEventStream struct {
+type aiEventStream struct {
 	ctx               context.Context
 	events            chan<- aiEvent
+	buddy             bool
+	buddyPartial      bool
 	pending           []byte
 	textSeen, anyText bool
 	failure           error
 }
 
-func (s *piEventStream) emit(e aiEvent) error {
+func (s *aiEventStream) emit(e aiEvent) error {
 	select {
 	case s.events <- e:
 		return nil
@@ -24,25 +26,25 @@ func (s *piEventStream) emit(e aiEvent) error {
 		return s.ctx.Err()
 	}
 }
-func (s *piEventStream) Write(data []byte) (int, error) {
+func (s *aiEventStream) Write(data []byte) (int, error) {
 	s.pending = append(s.pending, data...)
 	for {
 		i := bytes.IndexByte(s.pending, '\n')
 		if i < 0 {
 			break
 		}
-		line := s.pending[:i]
+		line := s.pending[:i+1]
 		s.pending = s.pending[i+1:]
 		if err := s.line(line); err != nil {
 			return 0, err
 		}
 	}
 	if len(s.pending) > 16<<20 {
-		return 0, fmt.Errorf("Pi 事件超过大小限制")
+		return 0, fmt.Errorf("AI 事件超过大小限制")
 	}
 	return len(data), nil
 }
-func (s *piEventStream) flush() error {
+func (s *aiEventStream) flush() error {
 	if len(bytes.TrimSpace(s.pending)) > 0 {
 		if err := s.line(s.pending); err != nil {
 			return err
@@ -51,7 +53,7 @@ func (s *piEventStream) flush() error {
 	s.pending = nil
 	return s.failure
 }
-func (s *piEventStream) text(delta string) error {
+func (s *aiEventStream) text(delta string) error {
 	if delta == "" {
 		return nil
 	}
@@ -62,9 +64,12 @@ func (s *piEventStream) text(delta string) error {
 	s.anyText = true
 	return s.emit(aiEvent{text: delta})
 }
-func (s *piEventStream) line(line []byte) error {
+func (s *aiEventStream) line(line []byte) error {
 	if len(bytes.TrimSpace(line)) == 0 {
 		return nil
+	}
+	if s.buddy {
+		return s.buddyLine(line)
 	}
 	var e struct {
 		Type, ToolName, ToolCallID string

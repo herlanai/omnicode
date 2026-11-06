@@ -4,7 +4,7 @@
 <key>CFBundleName</key><string>Omnicode</string>
 <key>CFBundleDisplayName</key><string>Omnicode</string>
 <key>CFBundleIdentifier</key><string>dev.omnicode.editor</string>
-<key>CFBundleVersion</key><string>38</string>
+<key>CFBundleVersion</key><string>59</string>
 <key>CFBundleIconFile</key><string>OmnicodeIcon-v3.icns</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleExecutable</key><string>omnicode</string>

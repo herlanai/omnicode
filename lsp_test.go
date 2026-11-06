@@ -254,3 +254,51 @@ func TestLSPJSONDiagnostics(t *testing.T) {
 		}
 	}
 }
+
+func TestMethodDefinitionNavigation(t *testing.T) {
+	if os.Getenv("OMNICODE_LSP_TEST") != "1" {
+		t.Skip("requires bundled gopls")
+	}
+	a := newApp(t.TempDir())
+	put(t, filepath.Join(a.root, "go.mod"), "module jump.test\n\ngo 1.22\n")
+	put(t, filepath.Join(a.root, "other.go"), "package jump\ntype service struct{}\nfunc (service) Remote() {}\n")
+	source := "package jump\nfunc (service) Local() {}\nfunc call(s service) { s.Local(); s.Remote() }\n"
+	path := filepath.Join(a.root, "main.go")
+	put(t, path, source)
+	a.open(path)
+	d := a.current()
+	worker := &languageWorker{kind: "go", jobs: make(chan languageJob, 1), sent: map[string]languageSnapshot{}}
+	a.intelligence.servers = map[string]*languageWorker{"go": worker}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	worker.cancel = cancel
+	events := make(chan intelligenceEvent, 128)
+	go worker.run(ctx, a.root, events)
+	d.state.OnDefinition = func(off int) { a.requestIntelligence(worker, d, definitionMethod, off, off) }
+	view := ui.NewTester(func(c *ui.Context) { a.textContent(c, d) }, 800, 550)
+	for _, tc := range []struct{ name, file string }{{"Local", "main.go"}, {"Remote", "other.go"}} {
+		off := strings.LastIndex(source, tc.name)
+		d.state.Select(off, off)
+		view.Frame()
+		view.Key(0, ui.KeyF12)
+		if worker.navigation == nil {
+			t.Fatal("F12 did not request a definition")
+		}
+		a.requestIntelligence(worker, d, "textDocument/hover", off, off)
+		for worker.navigation != nil {
+			select {
+			case e := <-events:
+				a.applyIntelligence(e)
+				if worker.failed {
+					t.Fatal(a.notice)
+				}
+			case <-ctx.Done():
+				t.Fatal("definition timed out", a.notice)
+			}
+		}
+		got := a.current()
+		if filepath.Base(got.path) != tc.file || got.state.SelectedText() != tc.name {
+			t.Fatalf("%s: %s selected %q (%s)", tc.name, got.path, got.state.SelectedText(), a.notice)
+		}
+	}
+}

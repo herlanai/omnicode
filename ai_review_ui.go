@@ -14,20 +14,24 @@ import (
 )
 
 func (a *app) hasPendingAI() bool {
-	r := a.ai.review
-	return r != nil && r.Approval && len(r.Changes) > 0
+	return a.ai.pending()
 }
 func (a *app) discardAIChanges() {
-	if a.ai.running {
+	a.ai.aiSession.discardChanges()
+}
+func (p *aiSession) discardChanges() {
+	if p.running {
 		return
 	}
-	if r := a.ai.review; r != nil {
+	if r := p.review; r != nil {
 		os.RemoveAll(r.Temp)
 	}
-	a.ai.review = nil
+	p.review = nil
 }
 func (a *app) approveAIChanges(paths map[string]bool) {
-	p := &a.ai
+	a.approveAISessionChanges(a.ai.aiSession, paths)
+}
+func (a *app) approveAISessionChanges(p *aiSession, paths map[string]bool) {
 	r := p.review
 	if r == nil || !r.Approval || p.running {
 		return
@@ -54,7 +58,7 @@ func (a *app) approveAIChanges(paths map[string]bool) {
 			remaining = append(remaining, change)
 			continue
 		}
-		if err := applyAIChange(r.Root, change); err != nil {
+		if err := a.applyApprovedChange(r.Root, change); err != nil {
 			p.err = err.Error()
 			remaining = append(remaining, change)
 			continue
@@ -65,16 +69,17 @@ func (a *app) approveAIChanges(paths map[string]bool) {
 	if len(applied) > 0 {
 		p.messages = append(p.messages, aiMessage{"assistant", fmt.Sprintf("已批准并应用 %d 个文件的修改：\n\n- %s", len(applied), strings.Join(applied, "\n- "))})
 		p.dirty = true
-		a.checkpointAI(true)
+		a.saveAISession(p, true)
 		a.refresh()
-		a.reloadAIText()
+		a.reloadAITextFor(p.root)
 	}
 	if len(remaining) == 0 {
-		a.discardAIChanges()
+		p.discardChanges()
 	}
 }
 func (a *app) showAIDiff(change aiChange) {
-	r := a.ai.review
+	p := a.ai.aiSession
+	r := p.review
 	if r == nil {
 		return
 	}
@@ -86,16 +91,16 @@ func (a *app) showAIDiff(change aiChange) {
 		ui.Column(c).Fill().Children(func() {
 			childTitlebar(c, change.label(), func() {
 				if r.Approval {
-					forma.Button(c, "批准此文件").Disabled(a.ai.running || a.ai.review != r).OnClick(func() {
+					forma.Button(c, "批准此文件").Disabled(p.running || p.review != r).OnClick(func() {
 						// Approve only the exact revision shown in this window.
 						for _, latest := range r.Changes {
 							if latest.Path == change.Path && !sameAIChange(latest, change) {
-								a.ai.err = "差异已更新，请重新打开预览后批准"
+								p.err = "差异已更新，请重新打开预览后批准"
 								window.Close()
 								return
 							}
 						}
-						a.approveAIChanges(map[string]bool{change.Path: true})
+						a.approveAISessionChanges(p, map[string]bool{change.Path: true})
 						window.Close()
 					})
 				}

@@ -40,6 +40,14 @@ func openProjectStore(path string) (*projectStore, error) {
 		db.Close()
 		return nil, err
 	}
+	if err = store.initSchedules(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err = store.initAIBackups(); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return store, nil
 }
 func (s *projectStore) remember(path string) error {
@@ -112,14 +120,14 @@ func compactPath(path string) string {
 	return path
 }
 func (a *app) recentView(c *ui.Context) {
-	ui.Column(c).Width(420).MaxWidth(420).Gap(8).Margin(16, 0, 0, 0).Children(func() {
+	ui.Column(c).Width(320).MaxWidth(320).Gap(8).Margin(16, 0, 0, 0).Children(func() {
 		muted(c, "最近项目")
 		ui.Scroll(c.Key("recent-projects")).FillWidth().Height(float32(min(len(a.recent), 4) * 48)).Children(func() {
 			ui.Column(c).FillWidth().Gap(2).Children(func() {
 				for _, item := range a.recent {
 					path := item.Path
 					ui.Row(c.Key(path)).FillWidth().Height(46).Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Button(c.Key("open-recent"), "").Grow(1).MinWidth(0).Height(44).Padding(4, 8).Border(0, ui.Transparent).Background(ui.Transparent).Radius(6).Label("打开项目 " + path).Tooltip(path).OnClick(func() { a.setRoot(path) }).Children(func() {
+						ui.Button(c.Key("open-recent"), "").Grow(1).MinWidth(0).Height(44).Padding(4, 8).Border(0, ui.Transparent).Background(ui.Transparent).Radius(6).Label("打开项目 " + path).Tooltip(path).OnClick(func() { a.chooseFolder(path) }).Children(func() {
 							ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
 								icon(c, "folder", 16)
 								ui.Column(c).Grow(1).MinWidth(0).Clip().Gap(2).Children(func() {

@@ -1,0 +1,11 @@
+@baseUrl = http://localhost:8080
+
+### 健康检查
+GET {{baseUrl}}/health
+Accept: application/json
+
+### 创建示例
+POST {{baseUrl}}/items
+Content-Type: application/json
+
+{"name": "example"}

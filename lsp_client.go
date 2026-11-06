@@ -274,7 +274,7 @@ func startLSP(ctx context.Context, kind, root string, notify func(string, json.R
 	if kind == "go" {
 		options = map[string]any{"completeUnimported": false, "usePlaceholders": false, "staticcheck": true}
 	}
-	params := map[string]any{"processId": os.Getpid(), "rootUri": lspURI(root), "workspaceFolders": []any{map[string]any{"uri": lspURI(root), "name": filepath.Base(root)}}, "clientInfo": map[string]any{"name": "Omnicode"}, "initializationOptions": options, "capabilities": map[string]any{"general": map[string]any{"positionEncodings": []string{"utf-16"}}, "textDocument": map[string]any{"completion": map[string]any{"completionItem": map[string]any{"snippetSupport": false, "documentationFormat": []string{"plaintext"}}}, "hover": map[string]any{"contentFormat": []string{"plaintext"}}, "publishDiagnostics": map[string]any{"versionSupport": true}}}}
+	params := map[string]any{"processId": os.Getpid(), "rootUri": lspURI(root), "workspaceFolders": []any{map[string]any{"uri": lspURI(root), "name": filepath.Base(root)}}, "clientInfo": map[string]any{"name": "Omnicode"}, "initializationOptions": options, "capabilities": map[string]any{"general": map[string]any{"positionEncodings": []string{"utf-16"}}, "textDocument": map[string]any{"definition": map[string]any{"linkSupport": true}, "completion": map[string]any{"completionItem": map[string]any{"snippetSupport": false, "documentationFormat": []string{"plaintext"}}}, "hover": map[string]any{"contentFormat": []string{"plaintext"}}, "publishDiagnostics": map[string]any{"versionSupport": true}}}}
 	var result struct {
 		Capabilities struct {
 			PositionEncoding string `json:"positionEncoding"`

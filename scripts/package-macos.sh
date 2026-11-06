@@ -2,7 +2,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 # Build a fresh bundle; never retain metadata or signatures from an earlier build.
-stage=$(mktemp -d "${TMPDIR:-/tmp}/omnicode-package.XXXXXX")
+stage=$(mktemp -d "$PWD/bin/.omnicode-package.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 app="$stage/Omnicode.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
@@ -35,8 +35,8 @@ installer="$stage/installer"
 mkdir "$installer"
 ditto bin/Omnicode.app "$installer/Omnicode.app"
 ln -s /Applications "$installer/Applications"
-version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' packaging/Info.plist)
-image="bin/Omnicode-macOS-$(uname -m)-build${version}.dmg"
+arch=$(uname -m)
+image="bin/Omnicode-macOS-${arch}.dmg"
 hdiutil create -volname Omnicode -srcfolder "$installer" -format UDZO -ov "$stage/Omnicode.dmg"
 hdiutil verify "$stage/Omnicode.dmg"
 # Verify the app and icon inside the actual read-only installation image.
@@ -54,5 +54,12 @@ cmp bin/Omnicode.icns "$mount/Omnicode.app/Contents/Resources/OmnicodeIcon-v3.ic
 test "$(readlink "$mount/Applications")" = /Applications
 hdiutil detach "$mount"
 trap 'rm -rf "$stage"' EXIT
-mv "$stage/Omnicode.dmg" "$image"
+# The staging directory is on the destination volume, so publication is atomic.
+mv -f "$stage/Omnicode.dmg" "$image"
+for old in bin/Omnicode-macOS-"$arch"-build*.dmg; do
+  [[ -f "$old" && ! -L "$old" ]] || continue
+  build=${old##*-build}
+  [[ ${build%.dmg} =~ ^[0-9]+$ ]] || continue
+  rm -f "$old"
+done
 printf 'Installer: %s\n' "$image"

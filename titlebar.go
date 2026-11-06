@@ -12,25 +12,26 @@ func (a *app) titlebar(c *ui.Context) {
 	bar := c.TitleBar()
 	ui.Row(c.Key("window-titlebar")).FillWidth().Height(max(float32(40), bar.Height)).Shrink(0).
 		Padding(0, max(float32(10), bar.Right+8), 0, max(float32(10), bar.Left+8)).Gap(4).
-		AlignItems(ui.Center).Background(a.theme.Sidebar).DragWindow().Children(func() {
+		AlignItems(ui.Center).Background(a.theme.Surface).DragWindow().Children(func() {
 		iconButton(c, "sidebar", "panel", "切换侧栏", func() { a.sidebar = !a.sidebar }).Size(30, 28).Padding(6)
 		iconButton(c, "open-folder", "folder", "打开文件夹", func() { a.pick(true) }).Size(30, 28).Padding(6)
 		ui.Box(c).Grow(1).MinWidth(12)
-		name := "打开文件"
+		name := "快速打开"
 		if a.root != "" {
 			name = filepath.Base(a.root)
 		}
-		ui.Button(c.Key("quick"), "").MaxWidth(420).Grow(1).MinWidth(0).Height(28).Padding(0, 10).Gap(8).
-			Border(0, ui.Transparent).Background(ui.Transparent).Radius(7).Label("快速打开").Tooltip("快速打开  ⌘ P").
+		ui.Button(c.Key("quick"), "").MaxWidth(320).Grow(1).MinWidth(0).Height(28).Padding(0, 10).Gap(8).
+			Border(1, a.theme.Border).Background(a.theme.Sidebar).Radius(9).Label("快速打开").Tooltip("快速打开  ⌘ P").
 			OnClick(a.toggleQuick).Children(func() {
-			ui.Row(c).Fill().Gap(8).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+			ui.Row(c).Fill().Gap(8).AlignItems(ui.Center).Children(func() {
 				icon(c, "search", 14)
-				ui.Text(c, name).FontSize(12).MaxLines(1).MinWidth(0)
+				ui.Text(c, name).FontSize(12).MaxLines(1).MinWidth(0).Grow(1)
+				muted(c, "⌘ P").FontSize(11)
 			})
 		})
 		ui.Box(c).Grow(1).MinWidth(12)
-		iconButton(c, "title-terminal", "code", "切换终端  Ctrl+`", a.toggleTerminal).Size(30, 28).Padding(6)
-		iconButton(c, "open-ai", "sparkles", "打开 AI 对话", a.toggleAI).Size(30, 28).Padding(6)
+		toolButton(c, "title-terminal", "terminal", "切换终端  Ctrl+`", a.terminal.visible && !a.settingsOpen && !a.schedules.open, a.toggleTerminal).Size(30, 28).Padding(6)
+		toolButton(c, "open-ai", "sparkles", "打开 AI 对话", a.ai.visible && !a.settingsOpen && !a.schedules.open, a.toggleAI).Size(30, 28).Padding(6)
 	})
 }
 

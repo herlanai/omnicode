@@ -14,10 +14,11 @@ import (
 )
 
 type intelligence struct {
-	accepted map[*document]completionInsertion
-	root     string
-	servers  map[string]*languageWorker
-	events   chan intelligenceEvent
+	references *referenceResults
+	accepted   map[*document]completionInsertion
+	root       string
+	servers    map[string]*languageWorker
+	events     chan intelligenceEvent
 }
 type languageSnapshot struct {
 	path, text, language string
@@ -38,7 +39,22 @@ type intelligenceEvent struct {
 	diagnostic bool
 	err        error
 }
+
+const definitionMethod = "textDocument/definition"
+const referencesMethod = "textDocument/references"
+
+func navigationMethod(method string) bool {
+	return method == definitionMethod || method == referencesMethod
+}
+func navigationNotice(method string) string {
+	if method == referencesMethod {
+		return "正在查找引用…"
+	}
+	return "正在查找定义…"
+}
+
 type languageWorker struct {
+	navigation    *languageJob // UI-owned explicit navigation request
 	requestMu     sync.Mutex
 	requestCancel context.CancelFunc
 	kind          string
@@ -125,7 +141,7 @@ func (a *app) updateIntelligence(c *ui.Context) {
 		d.state.OnHover = func(r editor.HoverRequest) {
 			a.requestIntelligence(worker, doc, "textDocument/hover", r.Offset, r.Offset)
 		}
-		d.state.OnDefinition = func(offset int) { a.requestIntelligence(worker, doc, "textDocument/definition", offset, offset) }
+		d.state.OnDefinition = func(offset int) { a.requestIntelligence(worker, doc, definitionMethod, offset, offset) }
 	}
 	for _, w := range a.intelligence.servers {
 		if w.failed {
@@ -138,7 +154,8 @@ func (a *app) updateIntelligence(c *ui.Context) {
 				changed = true
 			}
 		}
-		if changed {
+		if changed && !a.awaitingNavigation(w) {
+			w.navigation = nil
 			w.sent = map[string]languageSnapshot{}
 			for _, d := range docs {
 				w.sent[d.path] = d
@@ -158,10 +175,21 @@ func (a *app) updateIntelligence(c *ui.Context) {
 		}
 	}
 }
+func (a *app) awaitingNavigation(w *languageWorker) bool {
+	j := w.navigation
+	return j != nil && a.current() == j.target.doc && j.target.doc.state.Buffer.Version() == j.target.version
+}
 func (a *app) requestIntelligence(w *languageWorker, d *document, method string, offset, start int) {
 	if w.failed {
+		if navigationMethod(method) {
+			a.notice = "语言服务不可用，重新打开项目后重试"
+		}
 		return
 	}
+	if !navigationMethod(method) && a.awaitingNavigation(w) {
+		return
+	}
+	w.navigation = nil
 	w.serial++
 	docs := a.intelligenceSnapshots(w.kind)
 	w.sent = map[string]languageSnapshot{}
@@ -170,7 +198,12 @@ func (a *app) requestIntelligence(w *languageWorker, d *document, method string,
 	}
 	for _, s := range docs {
 		if s.doc == d {
-			w.submit(languageJob{docs: docs, target: s, method: method, offset: offset, start: start, serial: w.serial})
+			j := languageJob{docs: docs, target: s, method: method, offset: offset, start: start, serial: w.serial}
+			if navigationMethod(method) {
+				w.navigation = &j
+				a.notice = navigationNotice(method)
+			}
+			w.submit(j)
 			return
 		}
 	}
@@ -249,13 +282,17 @@ func (w *languageWorker) run(ctx context.Context, root string, events chan<- int
 			w.requestCancel = cancel
 			w.requestMu.Unlock()
 			var result json.RawMessage
-			err := rpc.call(reqCtx, j.method, map[string]any{"textDocument": map[string]any{"uri": lspURI(j.target.path)}, "position": lspPos(j.target.text, j.offset)}, &result)
+			params := map[string]any{"textDocument": map[string]any{"uri": lspURI(j.target.path)}, "position": lspPos(j.target.text, j.offset)}
+			if j.method == referencesMethod {
+				params["context"] = map[string]bool{"includeDeclaration": false}
+			}
+			err := rpc.call(reqCtx, j.method, params, &result)
 			cancel()
 			w.requestMu.Lock()
 			w.requestCancel = nil
 			w.requestMu.Unlock()
-			if err == nil {
-				emit(intelligenceEvent{job: j, result: result})
+			if err == nil || navigationMethod(j.method) {
+				emit(intelligenceEvent{job: j, result: result, err: err})
 			}
 		}
 	}
@@ -361,7 +398,13 @@ func lspCompletions(raw json.RawMessage, j languageJob) []editor.Completion {
 	return result
 }
 func (a *app) applyIntelligence(e intelligenceEvent) {
-	if e.err != nil {
+	if navigationMethod(e.job.method) && e.worker.navigation != nil && e.worker.navigation.serial == e.job.serial {
+		e.worker.navigation = nil
+		if a.notice == navigationNotice(e.job.method) {
+			a.notice = ""
+		}
+	}
+	if e.err != nil && e.job.method == "" {
 		e.worker.failed = true
 		a.notice = "智能提示 · " + e.worker.kind + ": " + e.err.Error()
 		return
@@ -429,7 +472,13 @@ func (a *app) applyIntelligence(e intelligenceEvent) {
 				d.state.ShowHover(start, end, text, nil)
 			}
 		}
-	case "textDocument/definition":
+	case referencesMethod:
+		a.receiveReferences(e)
+	case definitionMethod:
+		if e.err != nil {
+			a.notice = "查找定义失败：" + e.err.Error()
+			return
+		}
 		var locations []struct {
 			URI                  string   `json:"uri"`
 			Range                lspRange `json:"range"`
@@ -439,22 +488,53 @@ func (a *app) applyIntelligence(e intelligenceEvent) {
 		if json.Unmarshal(e.result, &locations) != nil {
 			_ = json.Unmarshal(append(append([]byte{'['}, e.result...), ']'), &locations)
 		}
-		if len(locations) > 0 {
-			v := locations[0]
+		for _, v := range locations {
 			if v.TargetURI != "" {
 				v.URI = v.TargetURI
 				v.Range = v.TargetSelectionRange
 			}
 			path := lspPath(v.URI)
-			if path != "" {
-				a.open(path)
-				if target := a.current(); target != nil && target.path == path && target.state != nil {
-					text := target.state.Buffer.String()
-					target.state.Select(lspOffset(text, v.Range.Start), lspOffset(text, v.Range.End))
-					target.state.ScrollTo(v.Range.Start.Line)
-					a.focusEditor = true
+			if path == "" {
+				continue
+			}
+			a.openLanguageLocation(path, v.Range, j.docs)
+			return
+		}
+		a.notice = "未找到此符号的定义"
+	}
+}
+
+func (a *app) openLanguageLocation(path string, r lspRange, snapshots []languageSnapshot) {
+	// Document paths are canonical, while servers can return a symlinked URI.
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	for i, open := range a.docs {
+		if open.path == path {
+			for _, snapshot := range snapshots {
+				if snapshot.path == path && (snapshot.doc != open || snapshot.version != open.state.Buffer.Version()) {
+					a.notice = "目标文件已更新，请重新跳转"
+					return
 				}
 			}
+			a.active = i
+			break
 		}
 	}
+	if a.current() == nil || a.current().path != path {
+		a.open(path)
+	}
+	target := a.current()
+	if target == nil || target.path != path {
+		return
+	}
+	if target.state == nil {
+		return
+	}
+	text := target.state.Buffer.String()
+	target.state.Select(lspOffset(text, r.Start), lspOffset(text, r.End))
+	target.state.ScrollTo(r.Start.Line)
+	a.quick = false
+	a.git.visible = false
+	a.focusEditor = true
 }

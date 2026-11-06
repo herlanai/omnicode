@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 
-	golet "github.com/HyperparameterSI/golet/backend"
 	"github.com/HyperparameterSI/golet/backend/plugins/terminal"
 	"github.com/HyperparameterSI/golet/backend/ui"
 	"github.com/HyperparameterSI/golet/backend/ui/editor"
@@ -25,20 +23,25 @@ type modelProfile struct {
 	KeyEnv   string `json:"keyEnv"`
 	APIKey   string `json:"apiKey,omitempty"`
 }
+
+var aiAccessModes = []string{"修改前审批", "完全控制"}
+
 type preferences struct {
-	Theme        string
-	Font         string
-	FontSize     float64
-	EditorFont   string
-	EditorSize   float64
-	TerminalSize float64
-	AIAccess     string
-	Engine       string
-	PiPath       string
-	BuddyPath    string
-	DSHPath      string
-	DefaultModel int
-	Models       []modelProfile
+	AutoCodeReview bool
+	VimMode        bool
+	Theme          string
+	Font           string
+	FontSize       float64
+	EditorFont     string
+	EditorSize     float64
+	TerminalSize   float64
+	AIAccess       string
+	Engine         string
+	PiPath         string
+	BuddyPath      string
+	DSHPath        string
+	DefaultModel   int
+	Models         []modelProfile
 }
 
 func defaultPreferences() preferences {
@@ -112,17 +115,28 @@ func (s *projectStore) saveSettings(p preferences) error {
 func (a *app) applyAppearance() {
 	p := a.prefs
 	dark := p.Theme == "深色" || (p.Theme == "跟随系统" && a.systemDark)
-	radius := float32(7)
+	radius := float32(8)
 	t := forma.NewTheme(forma.ThemeOptions{Preset: forma.Preset("Neutral"), Dark: dark, Radius: &radius, FontSize: float32(p.FontSize)})
 	t.Font = p.Font
 	if !dark {
 		t.Background = ui.Hex("#ffffff")
-		t.Sidebar = ui.Hex("#f7f7f6")
-		t.Surface = ui.Hex("#f4f4f3")
-		t.Border = ui.Hex("#e9e9e7")
+		t.Sidebar = ui.Hex("#f8f8f7")
+		t.Surface = ui.Hex("#efefed")
+		t.Border = ui.Hex("#e4e4e1")
 		t.Text = ui.Hex("#292b2c")
-		t.TextMuted = ui.Hex("#929391")
+		t.TextMuted = ui.Hex("#6c6e6c")
 		t.Selection = ui.Hex("#dfeafb")
+		t.SurfaceHover = ui.Hex("#e8e9e7")
+		t.SurfacePressed = ui.Hex("#dddfdc")
+	} else {
+		t.Background = ui.Hex("#202121")
+		t.Sidebar = ui.Hex("#252626")
+		t.Surface = ui.Hex("#2d2e2e")
+		t.SurfaceHover = ui.Hex("#373939")
+		t.SurfacePressed = ui.Hex("#414343")
+		t.Border = ui.Hex("#383a39")
+		t.Text = ui.Hex("#ececea")
+		t.TextMuted = ui.Hex("#a5a8a5")
 	}
 	a.theme = t
 	a.codeTheme = editor.DefaultTheme(t)
@@ -132,14 +146,19 @@ func (a *app) applyAppearance() {
 			a.codeTheme.Tokens[k].Color = ui.Hex(v)
 		}
 	}
-	if a.terminal.session != nil {
-		a.terminal.session.SetFont(terminal.Font{Family: p.EditorFont, Size: float32(p.TerminalSize)})
+	if dark {
+		a.codeTheme.ActiveLine = ui.Hex("#292b2b")
+		for k, v := range map[editor.TokenKind]string{editor.TokenKeyword: "#d9a6c5", editor.TokenOperator: "#c4b4c8", editor.TokenString: "#a5c7ad", editor.TokenFunction: "#a1bde6", editor.TokenType: "#d4bf99", editor.TokenNumber: "#dfb195", editor.TokenComment: "#939c99"} {
+			a.codeTheme.Tokens[k].Color = ui.Hex(v)
+		}
+	}
+	for _, tab := range a.terminal.tabs {
+		for _, pane := range tab.panes {
+			pane.session.SetFont(terminal.Font{Family: p.EditorFont, Size: float32(p.TerminalSize)})
+		}
 	}
 	if a.win != nil {
 		a.win.Invalidate()
-	}
-	if a.settingsWindow != nil {
-		a.settingsWindow.Invalidate()
 	}
 }
 func (a *app) showSettings() {
@@ -148,70 +167,104 @@ func (a *app) showSettings() {
 			a.settingsError = err.Error()
 		}
 	}
-	if a.settingsWindow != nil {
-		a.settingsWindow.Show()
-		a.settingsWindow.Focus()
-		return
+	a.schedules.open = false
+	a.sidebar = true
+	a.settingsOpen = true
+	if a.settingsTab == "" {
+		a.settingsTab = "外观"
 	}
-	a.settingsWindow = golet.NewWindow(golet.WindowOptions{Title: "设置", TitleBarStyle: golet.TitleBarHiddenInset, TrafficLightPosition: &golet.Point{X: 12, Y: 11}, TitleBarHeight: 40, Width: 760, Height: 680, MinWidth: 640, MinHeight: 500, Content: ui.View(a.settingsView)})
-	a.settingsWindow.OnClosed(func() { a.settingsWindow = nil })
+	if a.win != nil {
+		a.win.Show()
+		a.win.Focus()
+		a.win.Invalidate()
+	}
+}
+func (a *app) settingsSidebar(c *ui.Context) {
+	a.sidebarPanel(c, func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "设置").Bold().Grow(1)
+			iconButton(c, "back", "chevron-left", "返回工作区", a.leavePage)
+		})
+		for _, item := range []struct{ title, symbol string }{{"外观", "appearance"}, {"AI 引擎", "sparkles"}} {
+			row := ui.ButtonBase(c.Key(item.title)).FillWidth().Height(30).Padding(0, 12).Gap(9).AlignItems(ui.Center).Justify(ui.Start).Radius(6).Label(item.title).OnClick(func() { a.settingsTab = item.title })
+			selected := a.settingsTab == item.title || (a.settingsTab == "" && item.title == "外观")
+			color := a.theme.TextMuted
+			if selected {
+				row.Background(a.theme.Sidebar.Mix(a.theme.Accent, 0.14))
+				color = a.theme.Text
+			} else if row.Hovered() {
+				row.Background(a.theme.SurfaceHover)
+			}
+			row.Transition(chromeTransition).Children(func() {
+				icon(c, item.symbol, 16).TextColor(color)
+				ui.Text(c, item.title).FontWeight(500)
+			})
+		}
+	})
 }
 func (a *app) settingsView(c *ui.Context) {
-	c.SetTheme(a.theme)
 	before, _ := json.Marshal(a.prefs)
-	ui.Column(c).Fill().Children(func() {
-		childTitlebar(c, "设置", nil)
-		ui.Row(c).Fill().Background(a.theme.Background).Children(func() {
-			ui.Column(c).Width(150).FillHeight().Padding(20, 12).Gap(10).Background(a.theme.Sidebar).Children(func() {
-
-				for _, name := range []string{"外观", "AI 引擎"} {
-					name := name
-					forma.Button(c, name, forma.ButtonOptions{Variant: forma.Ghost}).FillWidth().OnClick(func() { a.settingsTab = name })
-				}
-			})
-			ui.Scroll(c.Key("settings-body")).Fill().Padding(28).Children(func() {
-				ui.Column(c).FillWidth().Gap(16).Children(func() {
-					if a.settingsTab == "AI 引擎" {
-						a.engineSettings(c)
-					} else {
-						a.appearanceSettings(c)
-					}
-					if a.settingsError != "" {
-						ui.Text(c, a.settingsError).TextColor(ui.Hex("#bd5555")).Wrap()
-					}
-				})
-			})
+	ui.Scroll(c.Key("settings-body-" + a.settingsTab)).Grow(1).MinWidth(0).FillHeight().AlignItems(ui.Center).Padding(32).Children(func() {
+		ui.Column(c).FillWidth().MaxWidth(720).Gap(16).Children(func() {
+			if a.settingsTab == "AI 引擎" {
+				a.engineSettings(c)
+			} else {
+				a.appearanceSettings(c)
+			}
+			if a.settingsError != "" {
+				ui.Text(c, a.settingsError).TextColor(ui.Hex("#bd5555")).Wrap()
+			}
 		})
 	})
 	after, _ := json.Marshal(a.prefs)
 	if string(before) != string(after) {
-		a.settingsError = ""
-		if a.projects == nil {
-			a.settingsError = "设置存储不可用，修改仅在本次运行生效"
-		} else if err := a.projects.saveSettings(a.prefs); err != nil {
-			a.settingsError = err.Error()
-		}
-		a.applyAppearance()
+		a.savePreferences()
 	}
 }
+func (a *app) savePreferences() {
+	if !a.prefs.VimMode {
+		for _, d := range a.docs {
+			d.vim = vimEditor{}
+		}
+	}
+	a.settingsError = ""
+	if a.projects == nil {
+		a.settingsError = "设置存储不可用，修改仅在本次运行生效"
+	} else if err := a.projects.saveSettings(a.prefs); err != nil {
+		a.settingsError = err.Error()
+	}
+	a.applyAppearance()
+}
+func settingsHeading(c *ui.Context, symbol, title string, size float32) ui.Element {
+	return ui.Row(c).Gap(9).AlignItems(ui.Center).Children(func() {
+		icon(c, symbol, size).TextColor(c.Theme().Text)
+		family := c.Theme().Font
+		if family == "" {
+			family = "PingFang SC"
+		}
+		ui.Text(c, title).Font(family).FontSize(size).FontWeight(400)
+	})
+}
+
 func settingsField(c *ui.Context, label string, build func()) {
 	ui.Column(c.Key(label)).FillWidth().Gap(6).Children(func() { ui.Text(c, label); build() })
 }
 func (a *app) appearanceSettings(c *ui.Context) {
 	p := &a.prefs
-	ui.Text(c, "外观").FontSize(22).Bold()
+	settingsHeading(c, "appearance", "外观", 22)
 	settingsField(c, "主题", func() { forma.Select(c, &p.Theme, []string{"跟随系统", "浅色", "深色"}).FillWidth() })
 	settingsField(c, "界面字体", func() { forma.Input(c, &p.Font, forma.InputOptions{Placeholder: "系统默认"}).FillWidth() })
 	settingsField(c, "界面字号", func() { ui.NumberInput(c, &p.FontSize, 10, 32, 1).Width(120) })
 	settingsField(c, "编辑器字体", func() { forma.Input(c, &p.EditorFont, forma.InputOptions{Placeholder: "monospace"}).FillWidth() })
 	settingsField(c, "编辑器字号", func() { ui.NumberInput(c, &p.EditorSize, 10, 32, 1).Width(120) })
+	forma.Checkbox(c, &p.VimMode, "Vim 模式")
 	settingsField(c, "终端字号", func() { ui.NumberInput(c, &p.TerminalSize, 10, 32, 1).Width(120) })
 	muted(c, "字体填写本机已安装的字体名称。修改自动保存。")
 }
 func (a *app) engineSettings(c *ui.Context) {
 	p := &a.prefs
-	ui.Text(c, "AI 引擎").FontSize(22).Bold()
-	settingsField(c, "默认引擎", func() { forma.Select(c, &p.Engine, []string{"pi-coding-agent", "CodeBuddy CLI", "DSH"}).FillWidth() })
+	settingsHeading(c, "sparkles", "AI 引擎", 22)
+	settingsField(c, "默认引擎", func() { forma.Select(c, &p.Engine, aiEngines).FillWidth() })
 	path := &p.PiPath
 	if p.Engine == "CodeBuddy CLI" {
 		path = &p.BuddyPath
@@ -223,7 +276,7 @@ func (a *app) engineSettings(c *ui.Context) {
 		if p.AIAccess == "" {
 			p.AIAccess = "修改前审批"
 		}
-		forma.Select(c, &p.AIAccess, []string{"修改前审批", "完全控制"}).FillWidth()
+		forma.Select(c, &p.AIAccess, aiAccessModes).FillWidth()
 	})
 	if p.Engine == "pi-coding-agent" {
 		muted(c, "Pi 已内置，填写模型 API Key 即可使用。")
@@ -277,7 +330,6 @@ func (a *app) engineSettings(c *ui.Context) {
 		forma.Select(c, &m.API, []string{"openai-completions", "openai-responses", "anthropic-messages"}).FillWidth()
 	})
 	muted(c, "请填写服务商实际的模型 ID 和 API 地址。直接填写 API Key，自动保存，仅供 Pi 使用。DSH 使用自身凭据配置。")
-	forma.Button(c, "导出默认模型配置…").OnClick(a.exportPiModel)
 }
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -302,20 +354,4 @@ func piModelJSON(m modelProfile) ([]byte, error) {
 		return nil, fmt.Errorf("不支持的 API 协议")
 	}
 	return json.MarshalIndent(map[string]any{"providers": map[string]any{m.Provider: map[string]any{"baseUrl": m.BaseURL, "api": m.API, "apiKey": "$" + m.KeyEnv, "models": []any{map[string]string{"id": m.Model, "name": m.Name}}}}}, "", "  ")
-}
-func (a *app) exportPiModel() {
-	b, err := piModelJSON(a.prefs.Models[a.prefs.DefaultModel])
-	if err != nil {
-		a.settingsError = err.Error()
-		return
-	}
-	path, err := golet.Dialog.Save(golet.SaveDialogOptions{Parent: a.settingsWindow, Title: "导出 pi 模型配置", DefaultPath: "models.json"})
-	if err == nil && path != "" {
-		err = os.WriteFile(path, b, 0600)
-	}
-	if err != nil {
-		a.settingsError = err.Error()
-	} else {
-		a.settingsError = ""
-	}
 }

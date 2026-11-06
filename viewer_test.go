@@ -131,7 +131,8 @@ func TestTerminalSession(t *testing.T) {
 	}
 	defer session.Close()
 	a := newApp("")
-	a.terminal = terminalPanel{session: session, visible: true, size: 65}
+	tab := &shellTab{panes: []*shellPane{{id: "1", session: session}}}
+	a.terminal = terminalPanel{tabs: []*shellTab{tab}, active: tab, visible: true, bottomSize: 65, serial: 1}
 	tester := ui.NewTester(a.view, 1200, 780)
 	select {
 	case <-session.Done():
@@ -148,6 +149,17 @@ func TestTerminalSession(t *testing.T) {
 	if !a.terminal.right {
 		t.Fatal("terminal docking failed")
 	}
+	tester.Frame()
+	header, ok := tester.Find("新建终端")
+	if !ok {
+		t.Fatal("missing terminal header")
+	}
+	for _, label := range []string{"搜索终端输出", "终端操作", "移到底部", "最大化终端", "隐藏终端"} {
+		r, ok := tester.Find(label)
+		if !ok || r.Y != header.Y || r.W != header.W {
+			t.Fatalf("%s outside the shared toolbar: %v, expected alignment with %v", label, r, header)
+		}
+	}
 	if dir := os.Getenv("OMNICODE_VIEWER_ARTIFACTS"); dir != "" {
 		os.MkdirAll(dir, 0755)
 		out, e := os.Create(filepath.Join(dir, "terminal.png"))
@@ -157,4 +169,79 @@ func TestTerminalSession(t *testing.T) {
 		defer out.Close()
 		png.Encode(out, tester.Image())
 	}
+}
+
+func TestTerminalSplitLifecycle(t *testing.T) {
+	if os.Getenv("OMNICODE_TERMINAL_TEST") == "" {
+		t.Skip("requires native PTYs")
+	}
+	t.Setenv("SHELL", "/bin/sh")
+	dir := t.TempDir()
+	a := newApp("")
+	p := &a.terminal
+	defer p.closeAll()
+	a.openTerminal(dir, "")
+	if p.count() != 1 {
+		t.Fatal(p.err)
+	}
+	tab := p.active
+	first := tab.panes[0]
+	a.openTerminal(dir, "horizontal")
+	if len(tab.panes) != 2 {
+		t.Fatal("split", p.err)
+	}
+	second := tab.panes[1]
+	tester := ui.NewTester(a.view, 1200, 780)
+	tester.Frame()
+	a.toggleTerminal()
+	first.session.Send([]byte("printf 'hidden-%s\\n' complete\r"))
+	deadline := time.Now().Add(4 * time.Second)
+	for !strings.Contains(first.session.Text(), "hidden-complete") && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(first.session.Text(), "hidden-complete") {
+		t.Fatal("hidden process did not receive command")
+	}
+	a.toggleTerminal()
+	first.searching = true
+	first.query = "hidden-complete"
+	for i := 0; i < 8; i++ {
+		tester.Advance(100 * time.Millisecond)
+	}
+	if first.session.SearchStatus().Total == 0 || second.session.SearchStatus().Text != "" {
+		t.Fatal("search did not stay in the source pane")
+	}
+	if err := tester.Click("新建终端"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if p.count() != 3 || p.active == tab {
+		t.Fatal("new tab replaced existing PTY")
+	}
+	p.closePane(p.active, p.active.panes[0])
+	if p.active != tab || p.count() != 2 {
+		t.Fatal("closing tab lost original split")
+	}
+	p.closePane(tab, second)
+	if !p.visible || p.count() != 1 || tab.panes[0] != first {
+		t.Fatal("closing split lost first pane")
+	}
+	a.openTerminal(dir, "")
+	a.openTerminal(dir, "")
+	current := p.active
+	tester.Frame()
+	if err := tester.Click("关闭标签 " + first.label()); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if p.active != current || p.count() != 2 {
+		t.Fatal("background tab close changed the active session")
+	}
+	p.closeTab(current)
+	p.closeTab(p.active)
+	a.openTerminal(dir, "")
+	if p.active == nil || p.active.panes[0].label() != "cmd1" {
+		t.Fatal("reopened terminal must start at cmd1", p.err)
+	}
+
 }
