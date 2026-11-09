@@ -101,6 +101,7 @@ func (a *app) loadRecent() {
 		return
 	}
 	a.recent = items
+	a.updateRecentDock()
 }
 func (a *app) rememberProject() {
 	if a.projects == nil {

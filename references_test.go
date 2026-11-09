@@ -41,7 +41,7 @@ func TestMethodReferencesFromContextMenu(t *testing.T) {
 		}
 		view.CloseMenu()
 	}
-	if err := view.ChooseMenuItem("查看引用"); err != nil {
+	if err := view.ChooseMenuItem("Find References"); err != nil {
 		t.Fatal(err, d.state.CursorPos(), y)
 	}
 	if w.navigation == nil {

@@ -56,7 +56,7 @@ func (a *app) bindReferenceMenu(d *document) {
 		return
 	}
 	d.state.ContextMenu = func(m *ui.Menu) {
-		if m.Item("查看引用").Chosen() {
+		if m.Item("Find References").Chosen() {
 			name, offset := referenceSymbol(d.state.Buffer.String(), d.state.Cursor())
 			if name == "" {
 				a.notice = "请在方法名上右键查看引用"
