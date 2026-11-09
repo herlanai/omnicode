@@ -141,6 +141,55 @@ func (a *app) replaceFolder(f *workspaceFolder) {
 	}
 	a.folders = append(a.folders, f)
 }
+func (a *app) removeWorkspaceFolder(f *workspaceFolder) {
+	index := -1
+	for i, folder := range a.folders {
+		if folder == f {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return
+	}
+	if a.git.mutating || a.busyAITab() != nil {
+		a.notice = "请先结束正在进行的操作并处理待批准修改"
+		return
+	}
+	var closing []int
+	for i, d := range a.docs {
+		if a.folderForPath(d.path) == f {
+			if !a.canClose(d) {
+				return
+			}
+			closing = append(closing, i)
+		}
+	}
+	if a.root == f.path {
+		next := &workspaceFolder{}
+		for _, folder := range a.folders {
+			if folder != f {
+				next = folder
+				break
+			}
+		}
+		if !a.activateFolder(next) {
+			return
+		}
+		a.closeGit()
+	}
+	for i := len(closing) - 1; i >= 0; i-- {
+		a.removeDocument(closing[i])
+	}
+	a.folders = append(a.folders[:index], a.folders[index+1:]...)
+	a.index = nil
+	a.treeSelection = a.root
+	a.fileFilter.close()
+	a.quick = false
+	a.git.visible = false
+	a.checkpointWorkspace()
+}
+
 func (a *app) folderTree(c *ui.Context, f *workspaceFolder) {
 	ui.Column(c.Key(f.path)).FillWidth().Gap(2).Children(func() {
 		row := ui.Row(c).FillWidth().Height(30).Padding(0, 6).Gap(6).Radius(6).AlignItems(ui.Center).Label(f.path).Tooltip(f.path).Cursor(ui.CursorPointer).OnClick(func() {
@@ -154,7 +203,14 @@ func (a *app) folderTree(c *ui.Context, f *workspaceFolder) {
 		if len(a.folders) > 1 && a.root == f.path {
 			row.Background(c.Theme().Sidebar.Mix(c.Theme().Accent, 0.14))
 		}
-		row.ContextMenu(a.fileMenu(c, f.path, true, true)).Children(func() {
+		row.ContextMenu(func(m *ui.Menu) {
+			if m.Item("从当前窗口移除项目").Chosen() {
+				a.removeWorkspaceFolder(f)
+				return
+			}
+			m.Separator()
+			a.fileMenu(c, f.path, true, true)(m)
+		}).Children(func() {
 			arrow := "chevron-down"
 			if f.collapsed {
 				arrow = "chevron-right"

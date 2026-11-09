@@ -45,7 +45,7 @@ type preferences struct {
 }
 
 func defaultPreferences() preferences {
-	return preferences{AIAccess: "修改前审批", Theme: "跟随系统", FontSize: 13, EditorFont: "monospace", EditorSize: 13, TerminalSize: 13, Engine: "pi-coding-agent", PiPath: "pi", BuddyPath: "codebuddy", DSHPath: "dsh", Models: []modelProfile{
+	return preferences{AIAccess: "修改前审批", Theme: "跟随系统", FontSize: 13, EditorFont: "monospace", EditorSize: 13, TerminalSize: 13, Engine: builtinEngine, PiPath: "pi", BuddyPath: "codebuddy", DSHPath: "dsh", Models: []modelProfile{
 		{Name: "deepseek-flash", Provider: "deepseek", Model: "deepseek-flash", BaseURL: "https://api.deepseek.com", API: "openai-completions", KeyEnv: "DEEPSEEK_API_KEY"},
 		{Name: "glm-5.3", Provider: "glm", Model: "glm-5.3", API: "openai-completions", KeyEnv: "GLM_API_KEY"},
 	}}
@@ -62,7 +62,7 @@ func (p preferences) validate() error {
 			return fmt.Errorf("字号范围为 10–32")
 		}
 	}
-	if p.Engine != "pi-coding-agent" && p.Engine != "CodeBuddy CLI" && p.Engine != "DSH" {
+	if p.Engine != builtinEngine && p.Engine != "pi-coding-agent" && p.Engine != "CodeBuddy CLI" && p.Engine != "DSH" {
 		return fmt.Errorf("无效引擎")
 	}
 	if len(p.Models) == 0 || p.DefaultModel < 0 || p.DefaultModel >= len(p.Models) {
@@ -278,13 +278,15 @@ func (a *app) engineSettings(c *ui.Context) {
 		}
 		forma.Select(c, &p.AIAccess, aiAccessModes).FillWidth()
 	})
-	if p.Engine == "pi-coding-agent" {
+	if p.Engine == builtinEngine {
+		muted(c, "内置 DSH-Go 助手使用下方默认模型及 API Key，支持 DeepSeek 和兼容接口。")
+	} else if p.Engine == "pi-coding-agent" {
 		muted(c, "Pi 已内置，填写模型 API Key 即可使用。")
 	} else {
 		settingsField(c, "CLI 路径", func() { forma.Input(c, path).FillWidth() })
 		muted(c, "引擎需单独安装并配置凭据；新发送的任务使用此处设置。")
 	}
-	ui.Text(c, "Pi 模型配置").Bold().Margin(12, 0, 0, 0)
+	ui.Text(c, "模型配置").Bold().Margin(12, 0, 0, 0)
 	for i := range p.Models {
 		i := i
 		ui.Row(c.Key(fmt.Sprintf("model-%d", i))).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {

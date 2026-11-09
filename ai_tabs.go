@@ -6,7 +6,15 @@ import (
 	"github.com/HyperparameterSI/golet/backend/ui"
 )
 
-var aiEngines = []string{"pi-coding-agent", "CodeBuddy CLI", "DSH"}
+var aiEngines = []string{builtinEngine, "pi-coding-agent", "CodeBuddy CLI", "DSH"}
+
+// selectedAIEngine is shared by the composer and manually requested reviews.
+func (a *app) selectedAIEngine() string {
+	if a.ai.aiSession != nil && a.ai.engine != "" {
+		return a.ai.engine
+	}
+	return a.prefs.Engine
+}
 
 func aiEngineLabel(engine string) string {
 	switch engine {

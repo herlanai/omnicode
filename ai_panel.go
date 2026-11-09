@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/HyperparameterSI/golet/backend/ui"
+	"github.com/HyperparameterSI/golet/backend/ui/forma"
 )
 
 type aiMessage struct{ role, text string }
@@ -71,6 +72,8 @@ func (a *app) attachAISelection(d *document) {
 }
 
 type aiSession struct {
+	queue                    forma.QueueState
+	promptRef                ui.Handle
 	selection                *aiSelection
 	focusPrompt              bool
 	scheduleID               int64
@@ -259,9 +262,7 @@ func (a *app) aiContent(c *ui.Context) {
 				for i, m := range p.messages {
 					ui.Column(c.Key(fmt.Sprintf("ai-message-%d", i))).FillWidth().MinWidth(0).Gap(8).Children(func() {
 						if m.role == "user" {
-							ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
-								ui.Text(c, m.text).MinWidth(0).Wrap().Selectable().Padding(10, 14).Radius(14).Background(c.Theme().Surface)
-							})
+							forma.AIMessage(c, forma.MessageUser, m.text)
 						} else if m.text != "" {
 							a.aiReply(c, i, m.text)
 							if p.running && i == len(p.messages)-1 && p.progress != "" {
@@ -277,21 +278,21 @@ func (a *app) aiContent(c *ui.Context) {
 					})
 				}
 				if len(p.activities) > 0 {
-					ui.Column(c).FillWidth().Gap(4).Children(func() {
-						for _, activity := range p.activities {
-							label := "进行中 · " + activity.progress
-							if activity.toolDone {
-								label = "完成 · " + activity.progress
-							}
-							if activity.toolFailed {
-								label = "失败 · " + activity.progress
-							}
-							if !p.running && !activity.toolDone {
-								label = "已停止 · " + activity.progress
-							}
-							muted(c, label).Wrap()
+					var steps []forma.AIStep
+					for _, e := range p.activities {
+						status := forma.AIRunning
+						if e.toolDone {
+							status = forma.AIComplete
 						}
-					})
+						if !p.running && !e.toolDone {
+							status = forma.AICancelled
+						}
+						if e.toolFailed {
+							status = forma.AIError
+						}
+						steps = append(steps, forma.AIStep{ID: e.toolID, Title: e.progress, Status: status})
+					}
+					forma.Queue(c.Key("tool-queue"), &p.queue, steps)
 				}
 			})
 		})
@@ -303,30 +304,35 @@ func (a *app) aiContent(c *ui.Context) {
 			if p.err != "" {
 				ui.Text(c, p.err).TextColor(c.Theme().Danger).Wrap().MaxLines(5).Tooltip(p.err)
 			}
-			engine := a.prefs.Engine
-			if p.engine != "" {
-				engine = p.engine
+			engine := a.selectedAIEngine()
+			state := forma.PromptInputState{Text: p.draft, Model: engine}
+			if sel := p.selection; sel != nil {
+				state.Attachments = []forma.PromptAttachment{{ID: "selection", Name: sel.File, Description: fmt.Sprintf("第 %d–%d 行", sel.First, sel.Last)}}
 			}
-			composer := ui.Column(c.Key(fmt.Sprintf("ai-composer-%p", p))).FillWidth().MinWidth(0).
-				Radius(22).Border(1, c.Theme().Border).Background(c.Theme().Background).Transition(chromeTransition)
-			composer.Children(func() {
-				if s := p.selection; s != nil {
-					ui.Row(c).FillWidth().Padding(6, 12, 0, 12).AlignItems(ui.Center).Gap(4).Children(func() {
-						muted(c, s.label()).MaxLines(1).MinWidth(0).Tooltip(s.label())
-						iconButton(c, "remove-selection", "close", "移除代码上下文", func() { p.selection = nil; p.dirty = true }).Size(20, 20).Padding(3)
-					})
-				}
-				prompt := ui.TextAreaBase(c.Key("ai-prompt"), &p.draft).FillWidth().MinWidth(0).Height(62).
-					Padding(13, 15).Background(ui.Transparent).Border(0, ui.Transparent).FocusRing(false).
-					TextColor(c.Theme().Text).Placeholder("和 Omnicode 一起工作…").Label("AI 消息")
-				if p.focusPrompt {
-					prompt.Focus()
-					p.focusPrompt = false
-				}
-				if prompt.Focused() {
-					composer.BorderColor(c.Theme().Accent)
-				}
-				ui.Row(c).FillWidth().Padding(0, 9, 8, 10).Gap(3).AlignItems(ui.Center).Children(func() {
+			var models []forma.ModelOption
+			for _, name := range aiEngines {
+				models = append(models, forma.ModelOption{ID: name, Name: aiEngineLabel(name)})
+			}
+			status := forma.PromptReady
+			if p.running {
+				status = forma.PromptStreaming
+			}
+			if p.focusPrompt {
+				p.promptRef.Focus()
+				p.focusPrompt = !p.promptRef.Focused(c)
+			}
+			forma.PromptInput(c.Key(fmt.Sprintf("ai-composer-%p", p)), &state, forma.PromptInputOptions{
+				Placeholder: "和 Omnicode 一起工作…", Models: models, Status: status, InputRef: &p.promptRef,
+				HideAttach:    true,
+				OnRemove:      func(forma.PromptAttachment) { p.selection = nil; p.dirty = true },
+				OnModelChange: func(model, effort string) { p.engine = model; p.dirty = true },
+				OnSubmit:      func(request forma.PromptSubmission) { p.draft = request.Text; a.sendAI(); state.Text = p.draft },
+				OnStop: func() {
+					if p.cancel != nil {
+						p.cancel()
+					}
+				},
+				Tools: func() {
 					mode := "修改前审批"
 					if a.prefs.AIAccess == "完全控制" {
 						mode = "完全控制"
@@ -362,44 +368,15 @@ func (a *app) aiContent(c *ui.Context) {
 						}
 						doc := a.current()
 						if m.Item("审查当前文件").Disabled(doc == nil || !doc.editable()).Chosen() {
-							a.reviewCurrentFile(doc, engine)
+							a.reviewCurrentFile(doc)
 						}
 						if m.Item("审查 Git 变更…").Chosen() {
 							a.showGitReview(true)
 						}
 					})
-					ui.Box(c).Grow(1)
-					action(c, "engine", aiEngineLabel(engine)+" ⌄", nil).Padding(0, 4).Tooltip("切换 AI 引擎").Disabled(p.running).Menu(func(m *ui.Menu) {
-						for _, name := range aiEngines {
-							if m.Item(aiEngineLabel(name)).Chosen() {
-								p.engine = name
-								p.dirty = true
-							}
-						}
-					})
-					name, label, action := "arrow-up", "发送 AI 消息", a.sendAI
-					if p.running {
-						name, label = "stop", "停止 AI 任务"
-						action = func() {
-							if p.cancel != nil {
-								p.cancel()
-							}
-						}
-					}
-					disabled := !p.running && strings.TrimSpace(p.draft) == ""
-					submitColor := c.Theme().Text
-					if disabled {
-						submitColor = c.Theme().TextMuted
-					}
-					ui.Button(c.Key("ai-submit"), "").Size(28, 28).MinWidth(0).MinHeight(0).Padding(6).Radius(14).
-						Border(0, ui.Transparent).Background(submitColor).Label(label).Tooltip(label).
-						Disabled(disabled).OnClick(action).
-						Children(func() { icon(c, name, 16).TextColor(c.Theme().Background) })
-				})
-			})
-			if composer.FocusWithin() {
-				composer.BorderColor(c.Theme().Focus)
-			}
+				},
+			}).Background(c.Theme().Background).Border(1, c.Theme().Border)
+			p.draft = state.Text
 		})
 	})
 	if c.Shortcut(ui.Cmd, ui.KeyEnter) && !p.running {
@@ -636,11 +613,28 @@ func (a *app) sendAIFor(p *aiSession, root string, active *document, autoReview 
 	if p.engine != "" {
 		prefs.Engine = p.engine
 	}
-	command, env, err := aiCommandForAccess(prefs, prompt, dir, review.Work, readOnly)
-	if err == nil && (readOnly || review.Approval) {
-		var sandboxEnv []string
-		command, sandboxEnv, err = sandboxAICommand(command, review, prefs.Engine)
-		env = append(env, sandboxEnv...)
+	var run func(context.Context, chan<- aiEvent) error
+	cleanup := func() {}
+	if prefs.Engine == builtinEngine {
+		conversation, closeConversation, e := builtinConversation(prefs, review.Work, readOnly)
+		err = e
+		if e == nil {
+			cleanup = closeConversation
+			run = func(ctx context.Context, events chan<- aiEvent) error {
+				return runBuiltin(ctx, conversation, prompt, events)
+			}
+		}
+	} else {
+		var command, env []string
+		command, env, err = aiCommandForAccess(prefs, prompt, dir, review.Work, readOnly)
+		if err == nil && (readOnly || review.Approval) {
+			var sandboxEnv []string
+			command, sandboxEnv, err = sandboxAICommand(command, review, prefs.Engine)
+			env = append(env, sandboxEnv...)
+		}
+		run = func(ctx context.Context, events chan<- aiEvent) error {
+			return runAI(ctx, command, env, review.Work, events)
+		}
 	}
 	if err != nil {
 		os.RemoveAll(dir)
@@ -649,6 +643,7 @@ func (a *app) sendAIFor(p *aiSession, root string, active *document, autoReview 
 	}
 	p.progress = ""
 	p.activities = nil
+	p.queue = forma.QueueState{PendingOpen: true}
 	p.review = review
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
@@ -668,12 +663,13 @@ func (a *app) sendAIFor(p *aiSession, root string, active *document, autoReview 
 	events := p.events
 	go func() {
 		defer cancel()
+		defer cleanup()
 		var changes []aiChange
 		var err error
 		if readOnly {
-			err = runAI(ctx, command, env, review.Work, events)
+			err = run(ctx, events)
 		} else {
-			changes, err = runAIObserved(ctx, command, env, review, events)
+			changes, err = observeAIRun(ctx, func() error { return run(ctx, events) }, review, events)
 		}
 		if autoReview && err == nil && ctx.Err() == nil && len(changes) > 0 {
 			err = reviewAssistantChanges(ctx, prefs, review, changes, events)

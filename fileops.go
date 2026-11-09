@@ -254,6 +254,7 @@ func (a *app) movePath(src, dst string) error {
 		rel, _ := filepath.Rel(src, a.fileClipboard.path)
 		a.fileClipboard.path = filepath.Join(dst, rel)
 	}
+	a.refresh()
 	return nil
 }
 func (a *app) pasteFile(dir string) error {

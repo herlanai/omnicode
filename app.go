@@ -14,6 +14,7 @@ import (
 )
 
 type app struct {
+	explorerRefresh            explorerRefresh
 	trackWorkspace             bool
 	lastWorkspace              workspaceSession
 	backupWindow               *golet.Window
@@ -118,13 +119,16 @@ func (a *app) activateFolder(folder *workspaceFolder) bool {
 	a.root = abs
 	a.treeSelection = abs
 	a.index = nil
-	a.rememberProject()
-	if len(a.ai.tabs) == 1 && a.ai.chatID == "" && a.ai.draft == "" {
+	if a.root != "" {
+		a.rememberProject()
+	}
+	if a.root != "" && len(a.ai.tabs) == 1 && a.ai.chatID == "" && a.ai.draft == "" {
 		a.restoreLatestAI()
 	}
 	return true
 }
 func (a *app) refresh() {
+	a.explorerRefresh.generation++
 	a.fileFilter.resetSearch()
 	for _, folder := range a.folders {
 		list, err := children(folder.path)
@@ -225,6 +229,18 @@ func (a *app) closeDoc(i int) {
 	}
 	a.removeDocument(i)
 }
+func (a *app) closeAllDocuments() {
+	for _, d := range a.docs {
+		if !a.canClose(d) {
+			return
+		}
+	}
+	for len(a.docs) > 0 {
+		a.removeDocument(len(a.docs) - 1)
+	}
+	a.checkpointWorkspace()
+}
+
 func (a *app) removeDocument(i int) {
 	a.releaseDocument(a.docs[i])
 	a.docs = append(a.docs[:i], a.docs[i+1:]...)
@@ -313,6 +329,7 @@ func muted(c *ui.Context, text string) ui.Element {
 }
 func (a *app) view(c *ui.Context) {
 	defer a.checkpointWorkspace()
+	a.tickExplorer(c)
 	a.tickGit(c)
 	a.updateIntelligence(c)
 	a.drainAI()
@@ -600,7 +617,11 @@ func (a *app) content(c *ui.Context) {
 					if i == a.active {
 						chip.BorderWidth(0, 0, 2, 0).BorderColor(a.theme.Accent)
 					}
-					chip.Transition(chromeTransition).Children(func() {
+					chip.ContextMenu(func(m *ui.Menu) {
+						if m.Item("关闭全部").Chosen() {
+							a.closeAllDocuments()
+						}
+					}).Transition(chromeTransition).Children(func() {
 						title := doc.name
 						if doc.state.Buffer.Modified() {
 							title += " •"

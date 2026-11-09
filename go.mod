@@ -7,12 +7,13 @@ require (
 	github.com/ebitengine/purego v0.11.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/xuri/excelize/v2 v2.11.0
- gopkg.in/yaml.v3 v3.0.1
 	golang.org/x/image v0.46.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/go-text/typesetting v0.3.5 // indirect
+	github.com/herlanai/omnix v0.1.1 // indirect
 	github.com/richardlehane/mscfb v1.0.7 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect

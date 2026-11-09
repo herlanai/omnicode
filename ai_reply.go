@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/HyperparameterSI/golet/backend/ui"
-	"github.com/HyperparameterSI/golet/backend/ui/markdown"
+	"github.com/HyperparameterSI/golet/backend/ui/forma"
 )
 
 // Strip only model protocol wrappers, never arbitrary HTML or tags inside code.
@@ -75,44 +75,20 @@ func splitAIReply(src string) (answer, thought string) {
 func (a *app) aiReply(c *ui.Context, index int, raw string) {
 	body, thought := splitAIReply(raw)
 	running := a.ai.running && index == len(a.ai.messages)-1
-	theme := markdown.DefaultTheme(c.Theme())
-	theme.FontSize = max(float32(14), c.Theme().FontSize)
-	theme.LineHeight = 1.65
-	theme.BlockSpacing = 1
-	theme.ItemSpacing = .5
-	theme.ListIndent = 1.4
-	theme.CodeSize = .9
-	theme.CodeLineHeight = 1.5
-	theme.CodeBlockPadding = .9
-	options := &markdown.Options{Theme: theme, WrapCode: true}
-	if thought != "" && body != "" {
+	if thought != "" {
 		if a.ai.thoughtOpen == nil {
 			a.ai.thoughtOpen = map[int]bool{}
 		}
-		open := a.ai.thoughtOpen[index]
-		ui.Button(c.Key("thought-toggle"), "").FillWidth().Height(28).Padding(0).Border(0, ui.Transparent).Background(ui.Transparent).
-			Label("思考过程").OnClick(func() { a.ai.thoughtOpen[index] = !open }).Children(func() {
-			ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-				name := "chevron-right"
-				if open {
-					name = "chevron-down"
-				}
-				icon(c, name, 12)
-				muted(c, "思考过程").FontSize(12)
-			})
-		})
-		if open {
-			ui.Column(c.Key("thought-body")).FillWidth().Padding(0, 0, 8, 12).BorderWidth(0, 0, 0, 2).BorderColor(c.Theme().Border).Children(func() { markdown.View(c, thought, options).FillWidth().MinWidth(0) })
+		open, seen := a.ai.thoughtOpen[index]
+		if !seen {
+			open = body == ""
 		}
-	}
-	// Some engines return only an analysis wrapper. Keep its content readable
-	// instead of dropping the entire response or leaving an empty conversation.
-	if body == "" {
-		body = thought
+		forma.Reasoning(c.Key("reasoning"), thought, running, 0, &open)
+		a.ai.thoughtOpen[index] = open
 	}
 	if body != "" {
-		markdown.View(c.Key("reply-body"), body, options).FillWidth().MinWidth(0)
-	} else if running {
+		forma.AIMessage(c.Key("reply-body"), forma.MessageAssistant, body, forma.AIMessageOptions{Streaming: running})
+	} else if running && thought == "" {
 		muted(c, "正在处理…")
 	}
 }

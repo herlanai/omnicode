@@ -66,6 +66,7 @@ func TestBundledPiWritesWithModelKey(t *testing.T) {
 	}))
 	defer server.Close()
 	p := defaultPreferences()
+	p.Engine = "pi-coding-agent"
 	p.Models = []modelProfile{{Name: "Local", Provider: "omnicode-test", Model: "local-test", API: "openai-completions", BaseURL: server.URL + "/v1", APIKey: "local-test-key"}}
 	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
 	root := t.TempDir()

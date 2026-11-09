@@ -22,7 +22,7 @@ func TestAIEntryAndLayout(t *testing.T) {
 	if !a.ai.visible {
 		t.Fatal("AI panel not shown")
 	}
-	if err := tester.Click("AI 消息"); err != nil {
+	if err := tester.Click("Prompt text"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Type("解释项目")
@@ -47,6 +47,7 @@ func TestAIEntryAndLayout(t *testing.T) {
 }
 func TestAIModelCommand(t *testing.T) {
 	p := defaultPreferences()
+	p.Engine = "pi-coding-agent"
 	p.PiPath = "/bin/echo"
 	t.Setenv("DEEPSEEK_API_KEY", "test-only")
 	dir := t.TempDir()
@@ -202,10 +203,10 @@ func TestAITabComposerSwitch(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	click("AI 消息")
+	click("Prompt text")
 	view.Type("first")
 	click("新建 AI 会话")
-	click("AI 消息")
+	click("Prompt text")
 	view.Type("second")
 	click("agent 1")
 	if a.ai.draft != "first" || a.ai.tabs[1].draft != "second" {
@@ -282,7 +283,7 @@ func TestAttachSelectionShortcut(t *testing.T) {
 	tester.ClickAt(510, 155)
 	a.current().state.Select(len("one\n二\nthree\n"), len("one\n"))
 	tester.Key(ui.Cmd, ui.KeyI)
-	if !tester.HasText("sample.go · 第 2–3 行") || a.ai.selection == nil {
+	if (!tester.HasText("sample.go") || !tester.HasText("第 2–3 行")) || a.ai.selection == nil {
 		t.Fatal("missing selection attachment")
 	}
 	tester.Type("解释")
@@ -294,7 +295,7 @@ func TestAttachSelectionShortcut(t *testing.T) {
 	if a.ai.selection.Code != "二\nthree\n" || !strings.Contains(prompt, `"二\nthree\n"`) {
 		t.Fatal(prompt)
 	}
-	if err := tester.Click("移除代码上下文"); err != nil || a.ai.selection != nil {
+	if err := tester.Click("Remove attachment sample.go"); err != nil || a.ai.selection != nil {
 		t.Fatal("remove attachment", err)
 	}
 }

@@ -16,8 +16,12 @@ func sameAIChange(a, b aiChange) bool {
 	return a.Path == b.Path && sameAIFile(a.Before, b.Before) && sameAIFile(a.After, b.After)
 }
 func runAIObserved(ctx context.Context, command, env []string, r *aiReview, events chan<- aiEvent) ([]aiChange, error) {
+	return observeAIRun(ctx, func() error { return runAI(ctx, command, env, r.Work, events) }, r, events)
+}
+
+func observeAIRun(ctx context.Context, run func() error, r *aiReview, events chan<- aiEvent) ([]aiChange, error) {
 	result := make(chan error, 1)
-	go func() { result <- runAI(ctx, command, env, r.Work, events) }()
+	go func() { result <- run() }()
 	ticker := time.NewTicker(700 * time.Millisecond)
 	defer ticker.Stop()
 	var latest []aiChange

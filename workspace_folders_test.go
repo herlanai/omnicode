@@ -51,3 +51,25 @@ func TestProjectsInOneWindow(t *testing.T) {
 		t.Fatal("replace affected unrelated project")
 	}
 }
+
+func TestRemoveWorkspaceFolder(t *testing.T) {
+	root := t.TempDir()
+	a := newApp(root)
+	first := a.folders[0]
+	second, err := readWorkspaceFolder(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.addFolder(second)
+	a.removeWorkspaceFolder(first)
+	if a.root != second.path || len(a.folders) != 1 {
+		t.Fatal("remaining project not activated")
+	}
+	a.removeWorkspaceFolder(second)
+	if a.root != "" || len(a.folders) != 0 {
+		t.Fatal("last project not removed")
+	}
+	if _, err := os.Stat(root); err != nil {
+		t.Fatal("project files affected", err)
+	}
+}

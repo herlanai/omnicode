@@ -32,7 +32,7 @@ func TestAIReplyReadableLayout(t *testing.T) {
 	if tester.HasText("<analysis>") {
 		t.Fatal("raw wrapper visible")
 	}
-	if err := tester.Click("思考过程"); err != nil {
+	if err := tester.Click("Reasoning"); err != nil {
 		t.Fatal(err)
 	}
 	if !a.ai.thoughtOpen[1] {

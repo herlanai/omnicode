@@ -105,6 +105,7 @@ func TestAssistantOCRReviewsApprovalCopy(t *testing.T) {
 	}
 	root, temp := t.TempDir(), t.TempDir()
 	prefs := defaultPreferences()
+	prefs.Engine = "pi-coding-agent"
 	prefs.PiPath = filepath.Join(t.TempDir(), "pi")
 	t.Setenv("DEEPSEEK_API_KEY", "test")
 	// Check that the delegated reviewer actually receives both the bundled
@@ -152,6 +153,9 @@ func TestCurrentFileReviewStreamsBeforeEngineExit(t *testing.T) {
 	}
 	a := newApp(t.TempDir())
 	dir := t.TempDir()
+	a.prefs.Engine = "CodeBuddy CLI"
+	a.prefs.BuddyPath = "/nonexistent/codebuddy"
+	a.ai.engine = "pi-coding-agent"
 	a.prefs.PiPath = filepath.Join(dir, "pi")
 	ack := filepath.Join(dir, "continue")
 	t.Setenv("REVIEW_STREAM_ACK", ack)
