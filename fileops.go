@@ -222,6 +222,13 @@ func (a *app) movePath(src, dst string) error {
 	if err := os.Rename(src, dst); err != nil {
 		return err
 	}
+	for i, path := range a.recentFiles {
+		if inside(src, path) {
+			rel, _ := filepath.Rel(src, path)
+			a.recentFiles[i] = filepath.Join(dst, rel)
+		}
+	}
+	a.persistRecentFiles()
 	if a.treeSelection != "" && inside(src, a.treeSelection) {
 		rel, _ := filepath.Rel(src, a.treeSelection)
 		a.treeSelection = filepath.Join(dst, rel)

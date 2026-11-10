@@ -162,6 +162,8 @@ func (a *app) applyAppearance() {
 	}
 }
 func (a *app) showSettings() {
+	a.loadDatabaseConnections()
+	a.database.open = false
 	if a.prefs.detectCLIs() && a.projects != nil {
 		if err := a.projects.saveSettings(a.prefs); err != nil {
 			a.settingsError = err.Error()
@@ -185,7 +187,7 @@ func (a *app) settingsSidebar(c *ui.Context) {
 			ui.Text(c, "设置").Bold().Grow(1)
 			iconButton(c, "back", "chevron-left", "返回工作区", a.leavePage)
 		})
-		for _, item := range []struct{ title, symbol string }{{"外观", "appearance"}, {"AI 引擎", "sparkles"}} {
+		for _, item := range []struct{ title, symbol string }{{"外观", "appearance"}, {"AI 引擎", "sparkles"}, {"数据库", "database"}} {
 			row := ui.ButtonBase(c.Key(item.title)).FillWidth().Height(30).Padding(0, 12).Gap(9).AlignItems(ui.Center).Justify(ui.Start).Radius(6).Label(item.title).OnClick(func() { a.settingsTab = item.title })
 			selected := a.settingsTab == item.title || (a.settingsTab == "" && item.title == "外观")
 			color := a.theme.TextMuted
@@ -203,6 +205,10 @@ func (a *app) settingsSidebar(c *ui.Context) {
 	})
 }
 func (a *app) settingsView(c *ui.Context) {
+	if a.settingsTab == "数据库" {
+		a.databaseSettings(c)
+		return
+	}
 	before, _ := json.Marshal(a.prefs)
 	ui.Scroll(c.Key("settings-body-" + a.settingsTab)).Grow(1).MinWidth(0).FillHeight().AlignItems(ui.Center).Padding(32).Children(func() {
 		ui.Column(c).FillWidth().MaxWidth(720).Gap(16).Children(func() {

@@ -101,7 +101,7 @@ func (a *app) openTerminal(dir, direction string) {
 
 func (a *app) toggleTerminal() {
 	p := &a.terminal
-	p.visible = a.settingsOpen || a.schedules.open || !p.visible || (a.sharedBottomPanel() && p.showReferences)
+	p.visible = a.settingsOpen || a.schedules.open || a.database.open || !p.visible || (a.sharedBottomPanel() && p.showReferences)
 	p.showReferences = false
 	a.leavePage()
 	if p.visible {

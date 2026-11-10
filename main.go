@@ -73,6 +73,9 @@ func main() {
 		a.applyAppearance()
 		golet.Theme.OnUpdated(func() { a.systemDark = golet.Theme.IsDark(); a.applyAppearance() })
 		golet.App.OnQuit(func() {
+			if a.database.cancel != nil {
+				a.database.cancel()
+			}
 			a.checkpointWorkspace()
 			a.trackWorkspace = false
 			a.closeIntelligence()
@@ -98,6 +101,9 @@ func main() {
 		a.win = golet.NewWindow(golet.WindowOptions{Title: "Omnicode", TitleBarStyle: golet.TitleBarHiddenInset, TrafficLightPosition: &golet.Point{X: 12, Y: 11}, TitleBarHeight: 40, Width: 1440, Height: 900, MinWidth: 800, MinHeight: 520, BackgroundColor: "#f7f7f6", Content: ui.View(a.view)})
 		a.updateRecentDock()
 		a.win.OnClosed(func() {
+			if a.database.cancel != nil {
+				a.database.cancel()
+			}
 			a.checkpointWorkspace()
 			if a.backupWindow != nil {
 				a.backupWindow.Destroy()

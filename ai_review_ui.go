@@ -63,6 +63,7 @@ func (a *app) approveAISessionChanges(p *aiSession, paths map[string]bool) {
 			remaining = append(remaining, change)
 			continue
 		}
+		a.rememberEditedFile(filepath.Join(r.Root, change.Path))
 		applied = append(applied, change.Path)
 	}
 	r.Changes = remaining

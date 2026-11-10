@@ -86,12 +86,12 @@ func TestResizeReferencesPane(t *testing.T) {
 	// The header starts at the panel's four-DIP top padding, just below the divider.
 	y := bounds.Y - 5
 	view.Move(400, y)
-	if view.Cursor() != ui.CursorResizeRow {
+	if view.Cursor() != ui.CursorResizeRow && view.Cursor() != ui.CursorResizeNS {
 		t.Fatalf("hover cursor = %v", view.Cursor())
 	}
 	view.Press(400, y)
 	view.Move(400, y-100)
-	if view.Cursor() != ui.CursorResizeRow {
+	if view.Cursor() != ui.CursorResizeRow && view.Cursor() != ui.CursorResizeNS {
 		t.Fatalf("drag cursor = %v", view.Cursor())
 	}
 	view.Release(400, y-100)

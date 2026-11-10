@@ -72,7 +72,6 @@ func (a *app) attachAISelection(d *document) {
 }
 
 type aiSession struct {
-	queue                    forma.QueueState
 	promptRef                ui.Handle
 	selection                *aiSelection
 	focusPrompt              bool
@@ -99,7 +98,7 @@ func (a *app) showAI() {
 	a.ai.visible = true
 }
 func (a *app) toggleAI() {
-	if a.settingsOpen || a.schedules.open {
+	if a.settingsOpen || a.schedules.open || a.database.open {
 		a.leavePage()
 		a.showAI()
 		return
@@ -181,6 +180,11 @@ func (a *app) drainAISession(p *aiSession) {
 				}
 			}
 			if ev.done {
+				if p.review != nil && !p.review.Approval {
+					for _, change := range ev.changes {
+						a.rememberEditedFile(filepath.Join(p.root, change.Path))
+					}
+				}
 				p.running = false
 				p.cancel = nil
 				p.events = nil
@@ -276,23 +280,6 @@ func (a *app) aiContent(c *ui.Context) {
 							muted(c, status).Wrap()
 						}
 					})
-				}
-				if len(p.activities) > 0 {
-					var steps []forma.AIStep
-					for _, e := range p.activities {
-						status := forma.AIRunning
-						if e.toolDone {
-							status = forma.AIComplete
-						}
-						if !p.running && !e.toolDone {
-							status = forma.AICancelled
-						}
-						if e.toolFailed {
-							status = forma.AIError
-						}
-						steps = append(steps, forma.AIStep{ID: e.toolID, Title: e.progress, Status: status})
-					}
-					forma.Queue(c.Key("tool-queue"), &p.queue, steps)
 				}
 			})
 		})
@@ -643,7 +630,6 @@ func (a *app) sendAIFor(p *aiSession, root string, active *document, autoReview 
 	}
 	p.progress = ""
 	p.activities = nil
-	p.queue = forma.QueueState{PendingOpen: true}
 	p.review = review
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel

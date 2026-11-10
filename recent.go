@@ -35,6 +35,10 @@ func openProjectStore(path string) (*projectStore, error) {
 		db.Close()
 		return nil, err
 	}
+	if _, err = db.Execute(context.Background(), `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY,value TEXT NOT NULL)`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	store := &projectStore{db: db}
 	if err = store.initAIHistory(); err != nil {
 		db.Close()
@@ -84,6 +88,7 @@ func (a *app) initProjectStore() {
 		return
 	}
 	a.projects = store
+	a.loadRecentFiles()
 	a.restoreLatestAI()
 	if a.root != "" {
 		a.rememberProject()

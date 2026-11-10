@@ -14,6 +14,9 @@ import (
 )
 
 type app struct {
+	database                   databasePanel
+	recentFiles                []string
+	recentFilesCollapsed       bool
 	explorerRefresh            explorerRefresh
 	trackWorkspace             bool
 	lastWorkspace              workspaceSession
@@ -202,6 +205,7 @@ func (a *app) save(d *document, as bool) bool {
 		a.report(err)
 		return false
 	}
+	a.rememberEditedFile(d.path)
 	a.notice = "已保存 · " + d.name
 	a.refresh()
 	return true
@@ -271,6 +275,7 @@ func (a *app) canQuit() bool {
 		return false
 	}
 	if tab := a.busyAITab(); tab != nil {
+		a.database.open = false
 		a.settingsOpen = false
 		a.schedules.open = false
 		a.ai.aiSession = tab
@@ -290,7 +295,7 @@ func (a *app) canQuit() bool {
 	return true
 }
 func (a *app) toggleQuick() {
-	a.quick = a.settingsOpen || a.schedules.open || !a.quick
+	a.quick = a.settingsOpen || a.schedules.open || a.database.open || !a.quick
 	a.leavePage()
 	a.query = ""
 	if a.contentSearch.cancel != nil {
@@ -333,6 +338,7 @@ func (a *app) view(c *ui.Context) {
 	a.tickGit(c)
 	a.updateIntelligence(c)
 	a.drainAI()
+	a.tickDatabase(c)
 	a.tickSchedules(c)
 	for _, tab := range a.ai.tabs {
 		a.saveAISession(tab, false)
@@ -344,7 +350,7 @@ func (a *app) view(c *ui.Context) {
 		}
 	}
 	for _, d := range a.docs {
-		if d.slides != nil && d.slides.pane != nil && (d != a.current() || d.slides.textMode || a.schedules.open || a.settingsOpen || a.quick || a.filePrompt.open) {
+		if d.slides != nil && d.slides.pane != nil && (d != a.current() || d.slides.textMode || a.database.open || a.schedules.open || a.settingsOpen || a.quick || a.filePrompt.open) {
 			d.slides.pane.hide()
 		}
 	}
@@ -353,7 +359,7 @@ func (a *app) view(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyB) {
 		a.sidebar = !a.sidebar
 	}
-	if a.settingsOpen || a.schedules.open {
+	if a.settingsOpen || a.schedules.open || a.database.open {
 		if c.Shortcut(ui.Cmd, ui.KeyW) {
 			a.leavePage()
 		} else if c.Shortcut(0, ui.KeyEscape) {
@@ -374,6 +380,8 @@ func (a *app) view(c *ui.Context) {
 			width, _ := c.Size()
 			showSidebar := a.sidebar
 			switch {
+			case a.database.open:
+				side, body = a.databaseSidebar, a.databaseView
 			case a.settingsOpen:
 				side, body = a.settingsSidebar, a.settingsView
 			case a.schedules.open:
@@ -382,12 +390,12 @@ func (a *app) view(c *ui.Context) {
 				showSidebar = a.sidebar && (!a.ai.visible || width >= 1100)
 			}
 			if showSidebar {
-				a.workspaceSplit(c, &a.sidebarWidth, func() { side(c) }, func() { body(c) }).Grow(1).FillHeight()
+				a.workspaceSplit(c, &a.sidebarWidth, func() { side(c) }, func() { body(c) }).Grow(1).Shrink(1).MinWidth(0).FillHeight()
 			} else {
 				body(c)
 			}
 		})
-		if !a.settingsOpen && !a.schedules.open {
+		if !a.settingsOpen && !a.schedules.open && !a.database.open {
 			a.status(c)
 		}
 	})
@@ -397,7 +405,7 @@ func (a *app) view(c *ui.Context) {
 	a.gitDialog(c)
 	a.terminalNameDialog(c)
 }
-func (a *app) leavePage() { a.settingsOpen = false; a.schedules.open = false }
+func (a *app) leavePage() { a.settingsOpen = false; a.schedules.open = false; a.database.open = false }
 func (a *app) workspaceShortcuts(c *ui.Context) {
 	if c.Shortcut(ui.Ctrl, ui.KeyBackquote) {
 		a.toggleTerminal()
@@ -439,7 +447,7 @@ func (a *app) workspaceSplit(c *ui.Context, width *float32, left, right func()) 
 	theme := *a.theme
 	theme.Border = ui.Transparent
 	theme.Accent = ui.Transparent
-	if a.git.visible && !a.settingsOpen && !a.schedules.open {
+	if a.git.visible && !a.settingsOpen && !a.schedules.open && !a.database.open {
 		theme.Border = a.theme.Sidebar
 		theme.Accent = a.theme.TextMuted
 	}
@@ -452,7 +460,7 @@ func (a *app) workspaceSplit(c *ui.Context, width *float32, left, right func()) 
 func (a *app) rail(c *ui.Context) {
 	ui.Column(c).Width(42).FillHeight().Padding(8, 4).Gap(7).Background(a.theme.Surface).AlignItems(ui.Center).Children(func() {
 		w, _ := c.Size()
-		page := a.settingsOpen || a.schedules.open
+		page := a.settingsOpen || a.schedules.open || a.database.open
 		explorer := !page && a.sidebar && (!a.ai.visible || w >= 1100) && !a.quick && !a.git.visible
 		toolButton(c, "explorer", "files", "文件浏览器", explorer, func() {
 			a.leavePage()
@@ -476,6 +484,7 @@ func (a *app) rail(c *ui.Context) {
 		})
 		toolButton(c, "schedules", "clock", "定时任务", a.schedules.open, func() {
 			a.settingsOpen = false
+			a.database.open = false
 			a.schedules.open = !a.schedules.open
 			if a.schedules.open {
 				a.sidebar = true
@@ -483,6 +492,7 @@ func (a *app) rail(c *ui.Context) {
 			a.schedules.poll = time.Time{}
 		})
 		ui.Box(c).Grow(1)
+		toolButton(c, "database-tool", "database", "数据库管理", a.database.open, a.openDatabasePanel)
 		iconButton(c, "http-client", "remote", "HTTP 请求", func() { a.leavePage(); a.openHTTP() })
 		toolButton(c, "settings", "settings", "设置  ⌘ ,", a.settingsOpen, func() {
 			if a.settingsOpen {
@@ -532,6 +542,7 @@ func (a *app) files(c *ui.Context) {
 				for _, folder := range a.folders {
 					a.folderTree(c, folder)
 				}
+				a.sidebarRecentFiles(c)
 				a.sidebarAIHistory(c)
 			})
 		})
@@ -890,5 +901,6 @@ func (a *app) writeAuto(d *document) bool {
 		d.saveError = "自动保存失败 · " + d.name + "：" + err.Error()
 		return false
 	}
+	a.rememberEditedFile(d.path)
 	return true
 }

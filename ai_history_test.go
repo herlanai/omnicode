@@ -119,8 +119,9 @@ func TestSidebarAIHistorySwitch(t *testing.T) {
 	}
 	v := ui.NewTester(a.view, 1440, 900)
 	header, ok := v.Find("AI 对话")
-	if !ok || header.Y > 200 {
-		t.Fatalf("history should follow the empty project tree: %v", header)
+	recent, recentOK := v.Find("最近编辑")
+	if !ok || !recentOK || header.Y < recent.Y+recent.H {
+		t.Fatalf("history should follow recent edited files: history=%v recent=%v", header, recent)
 	}
 	if err := v.Click("AI 对话"); err != nil {
 		t.Fatal(err)

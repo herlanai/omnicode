@@ -30,8 +30,8 @@ func (a *app) titlebar(c *ui.Context) {
 			})
 		})
 		ui.Box(c).Grow(1).MinWidth(12)
-		toolButton(c, "title-terminal", "terminal", "切换终端  Ctrl+`", a.terminal.visible && !a.settingsOpen && !a.schedules.open, a.toggleTerminal).Size(30, 28).Padding(6)
-		toolButton(c, "open-ai", "sparkles", "打开 AI 对话", a.ai.visible && !a.settingsOpen && !a.schedules.open, a.toggleAI).Size(30, 28).Padding(6)
+		toolButton(c, "title-terminal", "terminal", "切换终端  Ctrl+`", a.terminal.visible && !a.settingsOpen && !a.schedules.open && !a.database.open, a.toggleTerminal).Size(30, 28).Padding(6)
+		toolButton(c, "open-ai", "sparkles", "打开 AI 对话", a.ai.visible && !a.settingsOpen && !a.schedules.open && !a.database.open, a.toggleAI).Size(30, 28).Padding(6)
 	})
 }
 

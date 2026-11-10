@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/HyperparameterSI/golet v0.0.0
 	github.com/ebitengine/purego v0.11.1
+	github.com/go-sql-driver/mysql v1.8.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/image v0.46.0
@@ -12,6 +13,7 @@ require (
 )
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/herlanai/omnix v0.1.1 // indirect
 	github.com/richardlehane/mscfb v1.0.7 // indirect

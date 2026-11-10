@@ -10,6 +10,7 @@ var icons = map[string]*ui.SVG{}
 
 func init() {
 	paths := map[string]string{
+		"database":      `<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/>`,
 		"clock":         `<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>`,
 		"play":          `<path d="m7 4 13 8-13 8z"/>`,
 		"maximize":      `<path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/>`,
