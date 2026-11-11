@@ -437,6 +437,7 @@ func (a *app) workspaceShortcuts(c *ui.Context) {
 	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyV) {
 		if d := a.current(); d != nil && d.markdown() {
 			d.preview = !d.preview
+			d.md.reading = false
 		}
 	}
 	if a.quick && c.Shortcut(0, ui.KeyEscape) {
@@ -664,13 +665,7 @@ func (a *app) content(c *ui.Context) {
 				if d.path != "" {
 					iconButton(c, "ai-file-backups", "history", "AI 修改前的版本", func() { a.showAIBackups(d.path, false) })
 				}
-				if d.markdown() {
-					label := "预览"
-					if d.preview {
-						label = "关闭预览"
-					}
-					iconButton(c, "preview", "panel-right", label, func() { d.preview = !d.preview })
-				}
+
 			})
 		}
 

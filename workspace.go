@@ -31,6 +31,7 @@ type document struct {
 	state       *editor.State
 	diskHash    [32]byte
 	preview     bool
+	md          markdownDocument
 	autoVersion uint64
 	autoDue     time.Time
 	autoFailed  bool

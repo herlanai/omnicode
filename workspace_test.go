@@ -124,7 +124,7 @@ func TestEditorWorkflow(t *testing.T) {
 	if a.current().name != "README.md" {
 		t.Fatalf("quick open got %s query=%q quick=%v texts=%v", a.current().name, a.query, a.quick, tester.Texts())
 	}
-	if e := tester.Click("预览"); e != nil {
+	if e := tester.Click("分栏预览"); e != nil {
 		t.Fatal(e)
 	}
 	if !a.current().preview || !tester.HasText("Hello") {
