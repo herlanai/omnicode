@@ -1,27 +1,15 @@
 # Omnicode
 
-一个安静、专注的原生代码编辑器。采用 Codex 风格的浅色布局，以 Golet 的原生 UI、Forma 组件、代码编辑器和 Markdown 渲染器构建。应用代码全部为 Go，不使用 WebView、Electron、HTML 或 JavaScript。
+一个安静、专注的原生代码编辑器。采用 Codex 风格的浅色布局，集成代码编辑、Markdown 阅读、AI 助手、终端和项目管理功能。
 
 ## 运行
 
-需要 Go 1.27.3+，并在同级目录放置 [Golet](https://github.com/HyperparameterSI/golet) 源码：
-
-```text
-workspace/
-├── golet/
-└── omnicode/
-```
-
-当前 `go.mod` 使用 `replace github.com/HyperparameterSI/golet => ../golet`。本版验证所用 Golet 提交为 `efa603f5aca8233d958755581ad68c866e840ecb`。首次安装可执行：
+源码运行需要 Go 1.27.3+，并按 `go.mod` 准备依赖，包括其中指定的本地替换目录。依赖就绪后执行：
 
 ```sh
-git clone https://github.com/HyperparameterSI/golet ../golet
-git -C ../golet checkout efa603f5aca8233d958755581ad68c866e840ecb
 go mod download
 go run .
 ```
-
-已有 Golet 工作目录时请保留其修改，无需重新克隆或切换提交。其他位置可通过 `go mod edit -replace=github.com/HyperparameterSI/golet=/absolute/path/to/golet` 指定。
 
 ```sh
 go run . /path/to/project                    # 打开项目
@@ -31,7 +19,7 @@ make bundle                                # macOS: .app + bin/Omnicode-macOS-ar
 make test
 ```
 
-macOS 原生窗口使用 Golet 的 GPU 渲染。纯 Go 构建不要求 Node.js 或 CGO。当前已在 macOS arm64 上构建、测试；其他平台尚未验证。
+macOS 原生窗口使用 GPU 渲染。纯 Go 构建不要求 Node.js 或 CGO。当前已在 macOS arm64 上构建、测试；其他平台尚未验证。
 
 ## 已实现
 
@@ -43,12 +31,12 @@ macOS 原生窗口使用 Golet 的 GPU 渲染。纯 Go 构建不要求 Node.js �
 - 快速打开：按名称或相对路径筛选，Enter 打开首项，点击打开其他结果。
 - 原生 Markdown 源码、实时分栏预览和阅读模式，可调整分栏比例；阅读正文限制宽度，使用更舒适的字号与行距。
 - Markdown 标题大纲支持导航，格式菜单可插入标题、强调、链接、图片、列表、任务、引用、代码块和表格，使用编辑器的撤销与保存流程。显示字符数与标题数，预览支持本地图片、相对文件链接和标题锚点。直接编辑 `.md`，不转换为其他文档格式。
-- Markdown 体验参考 [quiet-md](https://github.com/s1dashu/quiet-md)，使用 Golet 原生控件实现；目前保留源码编辑，不提供块式所见即所得编辑、PDF 导出或 LaTeX 排版。
+- Markdown 体验参考 [quiet-md](https://github.com/s1dashu/quiet-md)，使用原生控件实现；目前保留源码编辑，不提供块式所见即所得编辑、PDF 导出或 LaTeX 排版。
 - 独立图片查看器：PNG、JPEG、GIF（首帧）、WebP、BMP、TIFF、SVG，支持缩放、100% 和适应窗口。
 - 独立 PDF 阅读器：macOS Core Graphics 渲染，上一页/下一页、缩放和适应窗口。当前为页面图片预览，暂不支持文本选择、搜索、批注和密码解锁。单页渲染最长边限制为 1800 像素。
 - 图片与 PDF 只读，不会进入自动保存流程。媒体文件上限 128 MiB，位图上限 4000 万像素；HEIC、AVIF、ICO 等暂不支持。
-- Golet 原生终端支持最多 16 个独立 Shell，每个标签可上下或左右分为两个窗格。Ctrl+反引号显示或隐藏终端，隐藏时命令继续运行。点 + 从当前项目新建标签，文件树右键可指定启动目录。窗格菜单支持分屏、重命名、清屏、重启、关闭及把当前屏幕文字带入 AI 草稿。放大镜可搜索屏幕和滚动历史。
-- 终端使用 Golet 自带的 libghostty-vt（动态加载、无 CGO）；`make bundle` 将运行库复制进应用，成品不依赖首次联网下载。
+- 原生终端支持最多 16 个独立 Shell，每个标签可上下或左右分为两个窗格。Ctrl+反引号显示或隐藏终端，隐藏时命令继续运行。点 + 从当前项目新建标签，文件树右键可指定启动目录。窗格菜单支持分屏、重命名、清屏、重启、关闭及把当前屏幕文字带入 AI 草稿。放大镜可搜索屏幕和滚动历史。
+- 终端使用 libghostty-vt（动态加载、无 CGO）；`make bundle` 将运行库复制进应用，成品不依赖首次联网下载。
 - 打开、自动保存、另存为；已有文件停止输入 750 ms 后自动保存，关闭前立即保存；新文件使用 ⌘ S 首次选择路径。保存失败保留修改并在状态栏提示，不会反复重试同一版本。同目录临时文件加原子替换，保留权限和 CRLF/LF，检测外部修改并拒绝覆盖。
 - Go 源码格式化、自动换行、光标位置和编码状态。
 - 系统文件对话框、应用菜单和快捷键。
@@ -70,7 +58,7 @@ macOS 使用 ⌘，Windows / Linux 使用 Ctrl。
 | Go 格式化 | Alt Shift F |
 | 撤销 / 重做 | ⌘ Z / ⌘ Shift Z |
 
-文件树底部的换行图标可切换自动换行。查找替换、多光标等编辑命令由 Golet 原生编辑器提供，也可通过编辑区右键菜单访问。
+文件树底部的换行图标可切换自动换行。查找替换、多光标等编辑命令由原生编辑器提供，也可通过编辑区右键菜单访问。
 
 ## 验证与原生截图
 
@@ -105,7 +93,7 @@ go run . -preview -screenshot artifacts/markdown.png . README.md
 
 欢迎页显示最近打开的项目，点击项目行重新打开。按最近打开时间排序、路径去重，最多保留 20 项；列表可滚动。右侧移除图标仅删除历史记录，不删除磁盘项目。路径失效时提示错误，仍可移除记录。
 
-使用 Golet 内置 SQLite 插件（动态加载、无 CGO），数据库在 macOS 的 `~/Library/Application Support/Omnicode/cache.sqlite`。当前表为 `recent_projects`，后续缓存可以添加独立表。首次运行新版后开始记录，旧版未持久化的历史无法自动恢复。数据库不可用时编辑器继续工作并显示提示。测试和截图不会写入用户数据库。
+使用本地 SQLite 存储，数据库在 macOS 的 `~/Library/Application Support/Omnicode/cache.sqlite`。当前表为 `recent_projects`，后续缓存可以添加独立表。首次运行新版后开始记录，旧版未持久化的历史无法自动恢复。数据库不可用时编辑器继续工作并显示提示。测试和截图不会写入用户数据库。
 
 SQLite 与终端运行库均随 `.app` 打包，不需要额外安装数据库或联网下载。
 
@@ -152,13 +140,13 @@ AI 文件修改默认使用“修改前审批”（设置 → AI 引擎 → 文�
 
 Pi 和 CodeBuddy CLI 使用 JSON 事件流（CodeBuddy 需支持 `--output-format stream-json --include-partial-messages`）：回复文本增量立即渲染，工具开始/完成/失败单独展示简洁进度，思考阶段显示状态。消息结束事件仅作兜底，不重复追加已流式显示的文本；JSON 模式的模型错误也会显示为任务失败。工具参数中的命令正文与原始工具输出不自动展示。
 
-HTML/HTM 文件右键选择“预览”，在应用内打开使用系统 WebView 的网页预览窗口，支持本地 CSS、JavaScript、图片及项目根目录相对路径。刷新图标先保存已编辑的项目文件，再绕过缓存刷新页面。预览仅监听 127.0.0.1，关闭窗口即停止服务；不提供目录列表、隐藏文件或指向项目外的符号链接。页面不获得 Golet 原生桥接权限。此预览为静态文件服务，不替代 Vite、Next.js 等开发服务器。
+HTML/HTM 文件右键选择“预览”，在应用内打开使用系统 WebView 的网页预览窗口，支持本地 CSS、JavaScript、图片及项目根目录相对路径。刷新图标先保存已编辑的项目文件，再绕过缓存刷新页面。预览仅监听 127.0.0.1，关闭窗口即停止服务；不提供目录列表、隐藏文件或指向项目外的符号链接。页面不获得应用原生桥接权限。此预览为静态文件服务，不替代 Vite、Next.js 等开发服务器。
 
 搜索（侧边栏搜索图标或 ⌘P）同时匹配文件路径和 UTF-8 文本内容，按不区分大小写的字面文本搜索，展示匹配片段、文件路径和行号，点击内容结果会定位并选中对应文本。优先搜索已打开编辑器中的当前内容。内容搜索后台执行并防抖，切换查询会取消旧任务；跳过二进制、超过 8 MiB 的文件和文件索引忽略的依赖/构建目录。内容结果最多 100 项，扫描预算为 128 MiB / 5 秒，达到限制会提示缩小范围。
 
 ### 原生代码智能提示（Build 33）
 
-编辑器使用 Go 实现的 LSP 客户端和 Golet 原生补全／悬浮／诊断控件，不需要模型 Key。
+编辑器使用 Go 实现的 LSP 客户端和原生补全／悬浮／诊断控件，不需要模型 Key。
 安装包内置 gopls v0.24.0（Go 官方）、typescript-language-server 6.0.3 + TypeScript 6.0.3，以及 vscode-langservers-extracted 4.10.0（HTML/CSS/JSON）。后两者复用应用内置 Node，不需要用户安装 Node/npm。Go 项目仍需要本机 Go SDK；启动时自动补充 Homebrew、/usr/local/go/bin 等路径。
 
 - Go、JS/TS（含 JSX/TSX）、HTML、CSS/SCSS/Less：输入时自动补全，Ctrl+Space 手动唤起，方向键选择，Tab/Enter 接受，Esc 关闭。
@@ -173,7 +161,7 @@ HTML/HTM 文件右键选择“预览”，在应用内打开使用系统 WebView
 
 ### 原生 Git 管理（Build 36）
 
-poprsi 的 Git 管理功能已迁移为 Golet 原生控件，沿用 Omnicode 主题、图标工具条和隐藏标题栏。只管理当前打开的仓库根目录；不保留 poprsi 的多项目登记列表。克隆后直接打开新项目。
+poprsi 的 Git 管理功能已迁移为原生控件，沿用 Omnicode 主题、图标工具条和隐藏标题栏。只管理当前打开的仓库根目录；不保留 poprsi 的多项目登记列表。克隆后直接打开新项目。
 
 - 变更：工作区／暂存区差异、整文件／全部／区块／逐行暂存与取消暂存，逐行丢弃，点击多选、Shift 连选及文本拖选；文件打开、复制路径、Finder、移到废纸篓。
 - 提交：提交说明、提交后推送、AI 生成说明、超过 10 MiB 的暂存文件提醒。AI 结果先填入输入框，由用户确认提交。
