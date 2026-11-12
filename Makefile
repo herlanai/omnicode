@@ -1,4 +1,4 @@
-.PHONY: run build test bundle icon pi-runtime clean
+.PHONY: run build test bundle bundle-intel bundle-all icon pi-runtime lsp-runtime clean
 
 run:
 	go run .
@@ -19,8 +19,15 @@ pi-runtime:
 lsp-runtime:
 	sh scripts/prepare-lsp.sh
 
-bundle: build icon pi-runtime lsp-runtime
-	bash scripts/package-macos.sh
+bundle:
+	bash scripts/build-macos.sh
+
+bundle-intel:
+	OMNICODE_ARCH=x86_64 bash scripts/build-macos.sh
+
+bundle-all:
+	OMNICODE_ARCH=arm64 bash scripts/build-macos.sh
+	OMNICODE_ARCH=x86_64 bash scripts/build-macos.sh
 
 clean:
 	rm -rf bin artifacts

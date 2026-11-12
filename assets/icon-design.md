@@ -9,4 +9,6 @@ Use case: logo-brand. Design a finished macOS app icon for Omnicode, a minimal n
 
 ## Packaging
 
-`make bundle` generates the full macOS `.icns` from the source PNG with `sips` and `iconutil`, embeds it in `Contents/Resources`, and makes a ZIP. The Go executable embeds the same PNG for its Dock icon when launched directly.
+`make bundle` generates the full macOS `.icns` from the source PNG with `sips` and `iconutil`, embeds it in `Contents/Resources`, and makes a drag-to-install DMG containing Omnicode.app and an Applications shortcut. The installer window reuses the logo in its background and the mounted volume icon. The Go executable embeds the same PNG for its Dock icon when launched directly.
+
+The DMG file itself receives the same custom Finder icon during packaging. This uses macOS resource-fork and Finder metadata; copies or downloads that discard extended attributes may show the system disk-image icon, while the icon inside the mounted image remains intact.

@@ -15,11 +15,13 @@ go run .
 go run . /path/to/project                    # 打开项目
 go run . /path/to/project /path/to/main.go   # 同时打开文件
 make build                                 # bin/omnicode
-make bundle                                # macOS: .app + bin/Omnicode-macOS-arm64.dmg
+make bundle                                # 当前 Mac 架构：.app 和 .dmg
+make bundle-intel                          # Intel Mac（x86_64）
+make bundle-all                            # 分别生成 Apple Silicon 和 Intel 安装包
 make test
 ```
 
-macOS 原生窗口使用 GPU 渲染。纯 Go 构建不要求 Node.js 或 CGO。当前已在 macOS arm64 上构建、测试；其他平台尚未验证。
+macOS 原生窗口使用 GPU 渲染。纯 Go 构建不要求 Node.js 或 CGO。支持 macOS 13.5 及以上的 arm64 与 x86_64 分别打包。Apple Silicon 上的 Intel 交叉构建会校验主程序及运行库架构，不代表完成 Intel 真机运行测试。
 
 ## 已实现
 
@@ -87,11 +89,13 @@ go run . -preview -screenshot artifacts/markdown.png . README.md
 - `icons.go`：小型线框 SVG 图标，由原生绘图引擎绘制。
 - `workspace_test.go`：磁盘安全和原生交互测试。
 
-工具栏设计约定：优先使用克制的线框图标，说明放在悬停提示中，同时保留无障碍名称。macOS 打包从全新目录生成并进行本地签名，生成 DMG 安装包，再挂载校验包内的签名、图标与 Applications 快捷方式。打开 DMG 后将 Omnicode 拖入 Applications 即可安装。
+工具栏设计约定：优先使用克制的线框图标，说明放在悬停提示中，同时保留无障碍名称。macOS 打包从全新目录生成并进行本地签名，生成 DMG 安装包，再挂载校验包内的签名、图标与 Applications 快捷方式。打开 DMG 后，将 `Omnicode.app` 拖到旁边的 `Applications` 文件夹即可安装。应用安装到 `/Applications/Omnicode.app`。更新前请保存工作并退出应用。
 
 ## 最近项目与本地数据库
 
 欢迎页显示最近打开的项目，点击项目行重新打开。按最近打开时间排序、路径去重，最多保留 20 项；列表可滚动。右侧移除图标仅删除历史记录，不删除磁盘项目。路径失效时提示错误，仍可移除记录。
+
+启动时不自动恢复上次打开的项目和文件；可以从最近项目列表手动打开，也可以通过启动参数打开指定项目或文件。
 
 使用本地 SQLite 存储，数据库在 macOS 的 `~/Library/Application Support/Omnicode/cache.sqlite`。当前表为 `recent_projects`，后续缓存可以添加独立表。首次运行新版后开始记录，旧版未持久化的历史无法自动恢复。数据库不可用时编辑器继续工作并显示提示。测试和截图不会写入用户数据库。
 
@@ -136,7 +140,7 @@ AI 文件修改默认使用“修改前审批”（设置 → AI 引擎 → 文�
 
 “完全控制”直接在原项目运行，不再等待 Omnicode 文件审批，仍显示观察到的文件变更与差异。引擎自身的权限规则继续生效。观察范围是任务期间的工作区变化，包含这期间用户或其他程序的修改，不将其误认为精确的工具调用事件。两种模式均略过 .git、node_modules、vendor、.idea、bin、artifacts、.venv；原始版本保存在本机临时目录，按文件流式复制与校验，审批副本会重建指向已复制内容的项目内符号链接，跳过外部、失效或目标未复制的链接。审批只追踪普通文件的变化；遇到其他特殊文件会拒绝启动。空目录变更不在审批范围内。审批副本中的构建命令可能因依赖目录未复制而不可用。当前仅 macOS 支持隔离审批，不支持的平台明确拒绝该模式，不降级为直接写入。
 
-内置 Pi 固定为 0.81.1，Node 固定为 24.15.0。`make pi-runtime` 根据 `packaging/pi/package-lock.json` 和 Node 官方 SHA-256 准备运行时，`make bundle` 自动执行此步骤并将运行时、依赖与许可证放入应用 Resources/pi。成品无需全局 Pi、npm 或 Node，也不在首次运行时下载引擎。打包对原生依赖签名，并在挂载后的 DMG 内以最小 PATH 验证 Pi 启动。安装版始终使用包内运行时，忽略旧设置遗留的外部 Pi 路径。
+内置 Pi 固定为 0.81.1，Node 固定为 24.15.0。`make pi-runtime` 根据 `packaging/pi/package-lock.json` 和 Node 官方 SHA-256 准备运行时，`make bundle` 自动执行此步骤并将运行时、依赖与许可证放入应用 Resources/pi。成品无需全局 Pi、npm 或 Node，也不在首次运行时下载引擎。打包对原生依赖签名，并在本机架构打包时以最小 PATH 验证 Pi 启动。安装版始终使用包内运行时，忽略旧设置遗留的外部 Pi 路径。
 
 Pi 和 CodeBuddy CLI 使用 JSON 事件流（CodeBuddy 需支持 `--output-format stream-json --include-partial-messages`）：回复文本增量立即渲染，工具开始/完成/失败单独展示简洁进度，思考阶段显示状态。消息结束事件仅作兜底，不重复追加已流式显示的文本；JSON 模式的模型错误也会显示为任务失败。工具参数中的命令正文与原始工具输出不自动展示。
 
@@ -183,3 +187,7 @@ AI 审查与提交说明读取固定的过滤快照，跳过敏感、二进制�
 左侧地球图标打开当前项目的 `requests.http`。已有的 `.http` 和 `.rest` 文件也可直接从文件树打开。用 `### 名称` 分隔请求，在文件开头定义 `@baseUrl = http://localhost:8080`，通过 `{{baseUrl}}` 在 URL、请求头或正文中引用。请求头与正文之间留一个空行。
 
 把光标放在目标请求内，点三角图标发送。也可选中接口地址或请求块，右键选择「run」。加号追加请求，复制图标生成可在终端复用的 cURL 命令。请求文件使用编辑器的自动保存和 Git 功能。响应只保留在当前标签页，显示状态码、耗时、响应头及最多 1 MiB 的正文。请求可取消，超时为 30 秒，重定向会显示原始 3xx 响应。
+
+### macOS 安装包架构
+
+`make bundle-intel` 生成 `bin/Omnicode-macOS-x86_64.dmg`；Apple Silicon 使用 `arm64` 后缀。应用与依赖分别位于 `bin/macos-x86_64/`、`bin/macos-arm64/`，不会混用。打包会为目标架构准备 Node、gopls、终端、SQLite 和代码审查运行库，并校验下载内容与 Mach-O 架构。跨架构构建不需要安装 Rosetta。

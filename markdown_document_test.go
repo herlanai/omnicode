@@ -167,3 +167,27 @@ func TestMarkdownLongOutlineLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkdownSearchFromReading(t *testing.T) {
+	a := newApp("")
+	d := newDocument("search.md", "# 搜索\n\n中文 target\n\n第二处 target\n")
+	d.md.reading = true
+	v := ui.NewTester(func(c *ui.Context) { a.markdownContent(c, d) }, 1000, 650)
+	if err := v.Click("搜索文档 (⌘F)"); err != nil {
+		t.Fatal(err)
+	}
+	if d.md.reading || !d.preview {
+		t.Fatal("search must expose source alongside preview")
+	}
+	d.state.Find("target")
+	v.Frame()
+	if n, _ := d.state.FindMatches(); n != 2 {
+		t.Fatalf("matches = %d", n)
+	}
+	d.state.Run(editor.FindNext)
+	v.Frame()
+	sel := d.state.Selection()
+	if got := d.state.Buffer.Slice(min(sel.Anchor, sel.Head), max(sel.Anchor, sel.Head)); got != "target" {
+		t.Fatalf("selected %q", got)
+	}
+}

@@ -25,6 +25,7 @@ type gitReviewUI struct {
 	window                                 *golet.Window
 	root, scope, prompt, output, err, meta string
 	ocr, busy                              bool
+	metaExpanded                           bool
 	cancel                                 context.CancelFunc
 	events                                 chan gitReviewEvent
 }
@@ -242,39 +243,7 @@ func (a *app) openReviewWindow(r *gitReviewUI, title string) {
 			}
 		}
 	drained:
-		ui.Column(c).Fill().Children(func() {
-			childTitlebar(c, "代码审查 · "+title, func() {
-				if r.busy {
-					iconButton(c, "review-stop", "stop", "停止审查", func() { r.cancel() })
-				}
-			})
-			if r.fileSnapshot == nil {
-				ui.Row(c).FillWidth().Padding(12, 18).Gap(12).AlignItems(ui.Center).Children(func() {
-					gitChoice(c, &r.scope, []gitOption{{"all", "全部未提交变更"}, {"staged", "仅已暂存"}, {"worktree", "工作区变更"}}).Width(150).Disabled(r.busy)
-					forma.Checkbox(c, &r.ocr, "Open CodeReview 规则").Disabled(r.busy)
-					ui.Box(c).Grow(1)
-					forma.Button(c, "开始审查").Disabled(r.busy).OnClick(func() { a.startGitReview(r) })
-				})
-				forma.Input(c.Key("review-prompt"), &r.prompt, forma.InputOptions{Placeholder: "审查重点（可选）"}).FillWidth().Margin(0, 18).Disabled(r.busy)
-			}
-			if r.status != "" {
-				ui.Row(c).FillWidth().Padding(8, 18).Gap(8).AlignItems(ui.Center).Children(func() {
-					status := r.status
-					if r.busy {
-						forma.Spinner(c)
-						status += " · " + time.Since(r.started).Truncate(time.Second).String()
-					}
-					ui.Text(c, status).FontSize(13).Wrap()
-				})
-			}
-			if r.meta != "" {
-				muted(c, r.meta).Wrap().FontSize(11).Padding(12, 18)
-			}
-			if r.err != "" {
-				ui.Text(c, r.err).TextColor(a.theme.Danger).Wrap().Padding(12, 18)
-			}
-			ui.Scroll(c.Key("review-output")).Grow(1).FillWidth().Padding(18).Children(func() { body, _ := splitAIReply(r.output); markdown.View(c, body, nil).FillWidth() })
-		})
+		a.reviewContent(c, r, title)
 	})})
 	r.window.OnClosed(func() {
 		if r.cancel != nil {
@@ -359,4 +328,70 @@ func (a *app) startGitReview(r *gitReviewUI) {
 			events <- ev
 		}
 	}()
+}
+
+func (a *app) reviewContent(c *ui.Context, r *gitReviewUI, title string) {
+	ui.Column(c).Fill().MinWidth(0).MinHeight(0).Children(func() {
+		childTitlebar(c, "代码审查 · "+title, func() {
+			if r.busy {
+				iconButton(c, "review-stop", "stop", "停止审查", func() { r.cancel() })
+			}
+		})
+		ui.Scroll(c.Key("review-content")).Scrollbars(true).KeepScrollbars(true).Grow(1).FillWidth().MinWidth(0).MinHeight(0).Children(func() {
+			if r.fileSnapshot == nil {
+				ui.Row(c).FillWidth().Padding(12, 18).Gap(12).AlignItems(ui.Center).Children(func() {
+					gitChoice(c, &r.scope, []gitOption{{"all", "全部未提交变更"}, {"staged", "仅已暂存"}, {"worktree", "工作区变更"}}).Width(150).Disabled(r.busy)
+					forma.Checkbox(c, &r.ocr, "Open CodeReview 规则").Disabled(r.busy)
+					ui.Box(c).Grow(1)
+					forma.Button(c, "开始审查").Disabled(r.busy).OnClick(func() { a.startGitReview(r) })
+				})
+				ui.Row(c).FillWidth().Padding(0, 18).Children(func() {
+					forma.Input(c.Key("review-prompt"), &r.prompt, forma.InputOptions{Placeholder: "审查重点（可选）"}).Grow(1).MinWidth(0).Disabled(r.busy)
+				})
+			}
+			if r.status != "" {
+				ui.Row(c).FillWidth().Padding(8, 18).Gap(8).AlignItems(ui.Center).Children(func() {
+					status := r.status
+					if r.busy {
+						forma.Spinner(c)
+						status += " · " + time.Since(r.started).Truncate(time.Second).String()
+					}
+					ui.Text(c, status).FontSize(13).Wrap()
+				})
+			}
+			if r.meta != "" {
+				a.reviewMetadata(c, r)
+			}
+			if r.err != "" {
+				ui.Text(c, r.err).TextColor(a.theme.Danger).Wrap().Padding(12, 18)
+			}
+			ui.Column(c).FillWidth().Padding(18).Children(func() { body, _ := splitAIReply(r.output); markdown.View(c, body, nil).FillWidth() })
+		})
+	})
+}
+
+func (a *app) reviewMetadata(c *ui.Context, r *gitReviewUI) {
+	summary, details, hasDetails := strings.Cut(r.meta, "\n")
+	ui.Column(c).FillWidth().MinWidth(0).Padding(8, 18).Gap(8).Children(func() {
+		if !hasDetails {
+			muted(c, summary).Wrap().FillWidth()
+			return
+		}
+		ui.ButtonBase(c.Key("review-meta-toggle")).FillWidth().MinWidth(0).Padding(6, 0).Gap(8).AlignItems(ui.Center).Label("审查范围详情").OnClick(func() { r.metaExpanded = !r.metaExpanded }).Children(func() {
+			name := "chevron-right"
+			if r.metaExpanded {
+				name = "chevron-down"
+			}
+			icon(c, name, 14)
+			muted(c, summary).Grow(1).MinWidth(0).Wrap()
+			label := "展开详情"
+			if r.metaExpanded {
+				label = "收起详情"
+			}
+			muted(c, label).FontSize(11)
+		})
+		if r.metaExpanded {
+			muted(c, details).FillWidth().MinWidth(0).Wrap().FontSize(11)
+		}
+	})
 }

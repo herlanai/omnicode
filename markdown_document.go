@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/HyperparameterSI/golet/backend/ui"
+	"github.com/HyperparameterSI/golet/backend/ui/editor"
 	"github.com/HyperparameterSI/golet/backend/ui/markdown"
 	"github.com/HyperparameterSI/golet/backend/ui/markdown/parser"
 )
@@ -47,6 +48,9 @@ func (d *document) updateMarkdown() {
 func (a *app) markdownContent(c *ui.Context, d *document) {
 	d.updateMarkdown()
 	m := &d.md
+	if m.reading && c.Shortcut(ui.Cmd, ui.KeyF) {
+		a.findMarkdown(d)
+	}
 	ui.Column(c).Grow(1).FillWidth().MinWidth(0).MinHeight(0).Children(func() {
 		ui.Row(c).FillWidth().Height(34).Padding(0, 12).Gap(4).AlignItems(ui.Center).Children(func() {
 			toolButton(c, "md-outline", "panel", "标题大纲", m.outline, func() { m.outline = !m.outline })
@@ -58,6 +62,7 @@ func (a *app) markdownContent(c *ui.Context, d *document) {
 				}
 			})
 			muted(c, fmt.Sprintf("%d 字符 · %d 个标题", m.characters, len(m.headings))).Grow(1)
+			iconButton(c, "md-search", "search", "搜索文档 (⌘F)", func() { a.findMarkdown(d) })
 			toolButton(c, "md-source", "code", "源码模式", !d.preview && !m.reading, func() { d.preview = false; m.reading = false })
 			toolButton(c, "md-split", "panel-right", "分栏预览", d.preview && !m.reading, func() { d.preview = true; m.reading = false })
 			toolButton(c, "md-read", "file", "阅读模式", m.reading, func() { m.reading = true })
@@ -251,4 +256,14 @@ func (a *app) insertMarkdown(d *document, kind string) {
 	d.state.Insert(before + text + after)
 	d.state.Select(start+len(before), start+len(before)+len(text))
 	a.focusEditor = true
+}
+
+// Reading mode exposes the searchable source beside the rendered document.
+// Reuse the editor's find bar for highlighting, match navigation and options.
+func (a *app) findMarkdown(d *document) {
+	if d.md.reading {
+		d.md.reading = false
+		d.preview = true
+	}
+	d.state.Run(editor.Find)
 }

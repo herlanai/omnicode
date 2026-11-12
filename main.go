@@ -63,9 +63,7 @@ func main() {
 			} else {
 				a.prefs = p
 			}
-			if flag.NArg() == 0 {
-				a.report(a.restoreWorkspace())
-			}
+			// Start empty unless files or folders were explicitly passed at launch.
 			a.trackWorkspace = true
 			a.checkpointWorkspace()
 		}

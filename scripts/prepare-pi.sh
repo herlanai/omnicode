@@ -1,14 +1,17 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
-case "$(uname -m)" in arm64) arch=arm64;; x86_64) arch=x64;; *) echo 'Unsupported macOS architecture' >&2; exit 1;; esac
+. ./scripts/macos-target.sh
+arch=$node_arch
 node_version=24.15.0
-runtime="$PWD/bin/pi-runtime"
+runtime="$build_dir/pi-runtime"
 cache="$PWD/bin/runtime-cache"
 mkdir -p "$cache"
 fingerprint="$(shasum -a 256 packaging/pi/package-lock.json | awk '{print $1}')-$node_version-$arch"
 if [ -f "$runtime/.manifest" ] && [ "$(cat "$runtime/.manifest")" = "$fingerprint" ]; then
-  env PATH=/usr/bin:/bin "$runtime/bin/node" "$runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js" --version
+  if [ "$go_arch" = "$(go env GOHOSTARCH)" ]; then
+    env PATH=/usr/bin:/bin "$runtime/bin/node" "$runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js" --version
+  fi
   exit 0
 fi
 archive="node-v${node_version}-darwin-${arch}.tar.gz"
@@ -27,8 +30,10 @@ tar -xzf "$cache/$archive" -C "$stage/extract"
 cp "$stage/extract/node-v${node_version}-darwin-${arch}/bin/node" "$stage/runtime/bin/node"
 cp "$stage/extract/node-v${node_version}-darwin-${arch}/LICENSE" "$stage/runtime/NODE-LICENSE"
 cp packaging/pi/package.json packaging/pi/package-lock.json "$stage/runtime/"
-npm ci --prefix "$stage/runtime" --ignore-scripts --omit=dev --no-audit --no-fund --cache "$cache/npm"
-env PATH=/usr/bin:/bin "$stage/runtime/bin/node" "$stage/runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js" --version
+npm ci --cpu="$node_arch" --os=darwin --prefix "$stage/runtime" --ignore-scripts --omit=dev --no-audit --no-fund --cache "$cache/npm"
+if [ "$go_arch" = "$(go env GOHOSTARCH)" ]; then
+  env PATH=/usr/bin:/bin "$stage/runtime/bin/node" "$stage/runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js" --version
+fi
 printf '%s' "$fingerprint" > "$stage/runtime/.manifest"
 rm -rf "$runtime"
 mv "$stage/runtime" "$runtime"
