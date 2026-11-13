@@ -48,14 +48,13 @@ func referenceSymbol(text string, offset int) (string, int) {
 func (a *app) bindReferenceMenu(d *document) {
 	kind, _ := lspLanguage(d.path)
 	w := a.intelligence.servers[kind]
-	if kind != "go" && kind != "typescript" {
-		return
-	}
-	if w == nil {
-		d.state.ContextMenu = nil
-		return
-	}
 	d.state.ContextMenu = func(m *ui.Menu) {
+		if m.Item("Format Document").Disabled(filepath.Ext(d.name) != ".go" || a.git.mutating || d.state.ReadOnly).Chosen() {
+			a.formatDocument(d)
+		}
+		if w == nil || (kind != "go" && kind != "typescript") {
+			return
+		}
 		if m.Item("Find References").Chosen() {
 			name, offset := referenceSymbol(d.state.Buffer.String(), d.state.Cursor())
 			if name == "" {

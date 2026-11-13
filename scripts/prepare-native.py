@@ -23,7 +23,10 @@ def fetch(url, digest, target):
     shutil.copyfile(cached, target)
 
 for plugin in ('terminal', 'sqlite'):
-    manifest = json.loads((pathlib.Path(module) / 'backend/plugins' / plugin / 'golet-plugin.json').read_text())
+    manifest_path = pathlib.Path(module) / 'backend/plugins' / plugin / 'golet-plugin.json'
+    if plugin == 'sqlite' and not manifest_path.exists():
+        manifest_path = manifest_path.parent / 'internal/sqlitecore/golet-plugin.json'
+    manifest = json.loads(manifest_path.read_text())
     for library in manifest['libraries']:
         entry = library['files']['darwin-' + arch]
         fetch(entry['url'], entry['sha256'], dst / entry['name'])

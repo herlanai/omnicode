@@ -306,12 +306,14 @@ func (a *app) toggleQuick() {
 		a.index = fileIndex(a.root)
 	}
 }
-func (a *app) format() {
+func (a *app) format() { a.formatDocument(a.current()) }
+
+func (a *app) formatDocument(d *document) {
 	if a.git.mutating {
 		a.notice = "请等待 Git 操作完成"
 		return
 	}
-	if d := a.current(); d != nil {
+	if d != nil && !d.state.ReadOnly {
 		if filepath.Ext(d.name) != ".go" {
 			a.notice = "格式化当前支持 Go 文件"
 			return
@@ -321,7 +323,12 @@ func (a *app) format() {
 			a.report(err)
 			return
 		}
-		d.state.Buffer.Set(string(text))
+		if string(text) != d.state.Buffer.String() {
+			selection := d.state.Selection()
+			d.state.Select(0, d.state.Buffer.Len())
+			d.state.Insert(string(text))
+			d.state.Select(min(selection.Anchor, len(text)), min(selection.Head, len(text)))
+		}
 		a.notice = "已格式化 · " + d.name
 	}
 }

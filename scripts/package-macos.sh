@@ -31,8 +31,9 @@ if [[ "$arch" = "$(uname -m)" ]]; then
   env PATH=/usr/bin:/bin "$app/Contents/Resources/pi/bin/node" "$app/Contents/Resources/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js" --version
 fi
 # Sign nested native code before sealing the complete bundle with a local signature.
-codesign --force --sign - "$app/Contents/Resources/libghostty-vt.dylib"
-codesign --force --sign - "$app/Contents/Resources/libgolet-sqlite3.dylib"
+for library in "$app/Contents/Resources/"*.dylib; do
+  codesign --force --sign - "$library"
+done
 codesign --force --sign - "$app"
 codesign --verify --deep --strict "$app"
 plutil -lint "$app/Contents/Info.plist"

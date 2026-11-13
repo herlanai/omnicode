@@ -32,6 +32,7 @@ func (a *app) checkpointWorkspace() {
 	if last.Root == s.Root && last.Active == s.Active && slices.Equal(last.Files, s.Files) && slices.Equal(last.Folders, s.Folders) {
 		return
 	}
+	a.updateRecentDock()
 	data, err := json.Marshal(s)
 	if err == nil {
 		_, err = a.projects.db.Execute(context.Background(), "INSERT INTO settings(key,value) VALUES('workspace',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", string(data))

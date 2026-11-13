@@ -89,7 +89,11 @@ func launchProjectWindow(path string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "--", path)
+	args := []string{}
+	if path != "" {
+		args = append(args, "--", path)
+	}
+	cmd := exec.Command(exe, args...)
 	if err = cmd.Start(); err != nil {
 		return err
 	}

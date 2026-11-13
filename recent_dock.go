@@ -37,9 +37,29 @@ func (a *app) updateRecentDock() {
 		a.chooseFolder(path)
 		a.win.Invalidate()
 	})
-	if len(items) == 0 {
-		golet.App.Dock.SetMenu(nil)
-		return
+	if len(items) > 0 {
+		items = append(items, golet.Separator())
 	}
+	for _, folder := range a.folders {
+		folder := folder
+		label := filepath.Base(folder.path)
+		active := folder.path == a.root
+		if d := a.current(); active && d != nil {
+			label += " — " + filepath.Base(d.path)
+		}
+		item := &golet.MenuItem{Label: label, ToolTip: folder.path, Type: golet.MenuItemCheckbox, Checked: active}
+		item.Click = func(*golet.MenuItem, *golet.Window) {
+			a.win.Show()
+			a.win.Focus()
+			a.activateFolder(folder)
+			a.updateRecentDock()
+			a.win.Invalidate()
+		}
+		items = append(items, item)
+	}
+	if len(a.folders) > 0 {
+		items = append(items, golet.Separator())
+	}
+	items = append(items, &golet.MenuItem{Label: "新建窗口", Click: func(*golet.MenuItem, *golet.Window) { a.report(launchProjectWindow("")) }})
 	golet.App.Dock.SetMenu(golet.NewMenu(items))
 }
